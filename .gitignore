@@ -90,4 +90,5 @@ ehthumbs.db
 *.env
 
 folder
+project.md
 # lockfiles (optional, depending on preference, but usually we keep package-lock.json. We will not ignore lockfiles here unless specified).
