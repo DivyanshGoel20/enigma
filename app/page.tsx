@@ -9,12 +9,11 @@ import { DiceDisplay } from "./components/ui/DiceDisplay";
 import { ActivityFeed } from "./components/spectator/ActivityFeed";
 import { SuspicionMeter } from "./components/spectator/SuspicionMeter";
 import { DetectiveCard } from "./components/spectator/DetectiveCard";
-import { LedgerPanel } from "./components/spectator/LedgerPanel";
 import { DETECTIVES, DETECTIVE_BY_ID } from "@/lib/game/constants";
 import type { DetectiveId, WeaponId } from "@/lib/game/types";
 import { runDeductionAnalysis } from "@/lib/game/deduction";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, Trophy, Activity, Users, HelpCircle, AlertTriangle } from "lucide-react";
+import { Trophy, Activity, Users, HelpCircle, AlertTriangle } from "lucide-react";
 
 export default function Home() {
   const {
@@ -40,7 +39,6 @@ export default function Home() {
   } = useGameStore();
 
   const {
-    gameSpeed,
     msPerStep,
     activePanel,
     isDiceAnimating,
@@ -268,7 +266,6 @@ export default function Home() {
                   isAnimating={isDiceAnimating}
                   onRoll={rollDiceAction}
                   disabled={actionState !== "idle" || status !== "playing"}
-                  speed={gameSpeed}
                 />
               </div>
             </div>
@@ -280,7 +277,7 @@ export default function Home() {
           <div className="glass-panel shadow-xl flex-1 flex flex-col min-h-[580px] max-h-[700px]">
             {/* Panel Tabs Header */}
             <div className="flex border-b border-white/5 bg-black/10 rounded-t-2xl">
-              {(["feed", "suspicion", "detectives", "ledger"] as const).map((tab) => {
+              {(["feed", "suspicion", "detectives"] as const).map((tab) => {
                 const getTabDetails = (t: typeof tab) => {
                   switch (t) {
                     case "feed":
@@ -289,8 +286,6 @@ export default function Home() {
                       return { label: "Confidence", icon: HelpCircle };
                     case "detectives":
                       return { label: "Dossiers", icon: Users };
-                    case "ledger":
-                      return { label: "0G Ledger", icon: Shield };
                   }
                 };
                 const details = getTabDetails(tab);
@@ -336,7 +331,6 @@ export default function Home() {
                   ))}
                 </div>
               )}
-              {activePanel === "ledger" && <LedgerPanel log={log} />}
             </div>
           </div>
         </section>
@@ -403,7 +397,7 @@ export default function Home() {
                       {DETECTIVE_BY_ID[winner]?.name}
                     </h4>
                     <p className="text-[10px] text-[#94a3b8] mt-0.5 leading-snug">
-                      Solved the case with 100% confidence. Ledger records uploaded to 0G.
+                      Solved the case with 100% confidence.
                     </p>
                   </div>
                 </div>

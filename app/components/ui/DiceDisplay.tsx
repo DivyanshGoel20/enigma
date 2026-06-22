@@ -1,14 +1,12 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import type { GameSpeed } from "@/lib/store/uiStore";
 
 interface DiceDisplayProps {
   value: number | null;
   isAnimating: boolean;
   onRoll: () => void;
   disabled: boolean;
-  speed: GameSpeed;
 }
 
 const DICE_FACE: Record<number, string> = {
@@ -20,12 +18,7 @@ const DICE_FACE: Record<number, string> = {
   6: "⚅",
 };
 
-export function DiceDisplay({ value, isAnimating, onRoll, disabled, speed }: DiceDisplayProps) {
-  const speedLabel: Record<GameSpeed, string> = {
-    slow: "Slow",
-    normal: "Normal",
-    fast: "Fast",
-  };
+export function DiceDisplay({ value, isAnimating, onRoll, disabled }: DiceDisplayProps) {
 
   return (
     <div className="flex flex-col items-center gap-3">

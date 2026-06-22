@@ -382,21 +382,13 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Log helper ───────────────────────────────────────────
   addLog: (agentId, action, details) => {
-    const makeTxHash = () => "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    const makeRootHash = () => Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-
-    const isPublicTx = ["GAME_START", "ROLL", "SUGGEST", "ACCUSE", "GAME_OVER", "ELIMINATED"].includes(action);
-    const isStorageUpload = ["DISPROVE", "ENTER_ROOM", "NO_DISPROVAL", "TURN_START"].includes(action);
-
     const entry: LogEntry = {
       id: makeId(),
       timestamp: Date.now(),
       agentId,
       action,
       details,
-      isEncrypted: action === "DISPROVE",
-      txHash: isPublicTx ? makeTxHash() : undefined,
-      rootHash: isStorageUpload ? makeRootHash() : undefined,
+      isEncrypted: false,
     };
     set((s) => ({ log: [...s.log, entry] }));
   },
