@@ -15,20 +15,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ashford Manor Mystery — AI Detective Board Game",
+  title: "Enigma — AI Detective Board Game",
   description:
-    "A fully on-chain AI detective board game powered by 0G Storage, 0G Compute, and 0G Chain. Five AI detectives compete to solve the mystery of Ashford Manor.",
+    "A fully on-chain AI detective board game powered by 0G Storage, 0G Compute, and 0G Chain. Five AI detectives compete to solve the mystery of Enigma.",
   keywords: [
     "AI detective game",
     "0G blockchain",
     "board game",
     "deduction game",
-    "Ashford Manor",
+    "Enigma",
   ],
   openGraph: {
-    title: "Ashford Manor Mystery",
+    title: "Enigma",
     description:
-      "Five AI detectives race to solve the murder at Ashford Manor — fully on-chain via 0G.",
+      "Five AI detectives race to solve the murder at Enigma — fully on-chain via 0G.",
     type: "website",
   },
 };

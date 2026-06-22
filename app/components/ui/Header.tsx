@@ -15,8 +15,8 @@ export function Header() {
       <div className="flex items-center gap-3">
         <div className="wax-seal" />
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-[#b89255] font-sans">
-            Ashford Manor Mystery
+          <h1 className="text-xl font-extrabold tracking-wider text-[#b89255] serif-title uppercase">
+            Enigma
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-[10px] text-[#94a3b8] font-mono">
@@ -44,7 +44,7 @@ export function Header() {
         {/* Action Button */}
         <button
           onClick={handleReset}
-          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold font-mono bg-white/[0.04] border border-white/5 hover:bg-white/[0.08] hover:border-white/10 active:scale-95 text-[#f1f5f9] transition-all"
+          className="px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono bg-white/[0.04] border border-[#b89255]/20 hover:border-[#b89255]/40 hover:bg-[#b89255]/5 active:scale-95 text-[#f1f5f9] transition-all cursor-pointer"
         >
           {status === "initializing" ? "Start Game" : "New Match"}
         </button>

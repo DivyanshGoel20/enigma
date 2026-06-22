@@ -12,6 +12,7 @@ export interface UIState {
   isDiceAnimating: boolean;
   isBoardHighlighting: boolean;
   showWinnerReveal: boolean;
+  isPaused: boolean;
 }
 
 export interface UIActions {
@@ -19,6 +20,7 @@ export interface UIActions {
   setDiceAnimating: (v: boolean) => void;
   setBoardHighlighting: (v: boolean) => void;
   setShowWinnerReveal: (v: boolean) => void;
+  setPaused: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState & UIActions>((set) => ({
@@ -27,6 +29,7 @@ export const useUIStore = create<UIState & UIActions>((set) => ({
   isDiceAnimating: false,
   isBoardHighlighting: false,
   showWinnerReveal: false,
+  isPaused: false,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
 
@@ -35,4 +38,6 @@ export const useUIStore = create<UIState & UIActions>((set) => ({
   setBoardHighlighting: (v) => set({ isBoardHighlighting: v }),
 
   setShowWinnerReveal: (v) => set({ showWinnerReveal: v }),
+
+  setPaused: (v) => set({ isPaused: v }),
 }));

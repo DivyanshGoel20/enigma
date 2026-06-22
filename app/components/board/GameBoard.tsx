@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { BOARD_SIZE } from "@/lib/game/constants";
+import { BOARD_SIZE, ROOMS } from "@/lib/game/constants";
 import { getCellType } from "@/lib/game/board";
 import type { DetectiveState, Position } from "@/lib/game/types";
 import { BoardCell } from "./BoardCell";
@@ -51,13 +51,45 @@ export function GameBoard({
       style={{ aspectRatio: "1 / 1" }}
     >
       <div
-        className="board-felt rounded-lg w-full h-full"
+        className="board-felt rounded-lg w-full h-full relative"
         style={{
           display: "grid",
           gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`,
           gridTemplateRows: `repeat(${BOARD_SIZE}, 1fr)`,
         }}
       >
+        {/* Room Labels Layer */}
+        <div className="absolute inset-0 pointer-events-none z-10">
+          {ROOMS.map((room) => {
+            const left = (room.minX / BOARD_SIZE) * 100;
+            const top = (room.minY / BOARD_SIZE) * 100;
+            const width = ((room.maxX - room.minX + 1) / BOARD_SIZE) * 100;
+            const height = ((room.maxY - room.minY + 1) / BOARD_SIZE) * 100;
+
+            return (
+              <div
+                key={room.id}
+                className="absolute flex items-center justify-center text-center font-bold pointer-events-none select-none serif-title uppercase"
+                style={{
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${width}%`,
+                  height: `${height}%`,
+                  fontSize: "clamp(7px, 1.25vw, 12px)",
+                  color: "rgba(255, 255, 255, 0.72)",
+                  letterSpacing: "0.06em",
+                  textShadow: "0 2px 4px rgba(0,0,0,0.85)",
+                  lineHeight: 1.2,
+                  whiteSpace: "pre-line",
+                  padding: "6px",
+                }}
+              >
+                {room.name}
+              </div>
+            );
+          })}
+        </div>
+
         {cells.map(({ x, y, type }) => {
           const key = `${x},${y}`;
           const pawnsHere = pawnMap.get(key) ?? [];

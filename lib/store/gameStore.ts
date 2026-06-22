@@ -192,6 +192,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         })
       );
 
+      set({ syncMessage: "Dealing cards and shuffling Enigma deck..." });
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
       const notebooks: Record<DetectiveId, DeductionNotebook> = {} as Record<DetectiveId, DeductionNotebook>;
       const confidence: Record<DetectiveId, number> = {} as Record<DetectiveId, number>;
       for (const det of detectives) {
@@ -204,9 +207,12 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         timestamp: Date.now(),
         agentId: "SYSTEM",
         action: "GAME_START",
-        details: `Ashford Manor Mystery begins. Game ID: ${gameId}. 5 detectives enter the manor.`,
+        details: `Enigma begins. Game ID: ${gameId}. 5 detectives enter the manor.`,
         isEncrypted: false,
       };
+
+      set({ syncMessage: "Encrypting and uploading sealed case files to 0G Storage..." });
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Upload game setup to 0G Storage
       const res = await fetch("/api/storage/upload", {
@@ -233,6 +239,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         rootHash: resData.rootHash,
         txSeq: resData.txSeq,
       };
+
+      set({ syncMessage: "Anchoring game setup registry onto the 0G Chain..." });
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       set({
         ...INITIAL_STATE,
@@ -762,11 +771,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     const newTurn = turn + 1;
     const newRound = nextIndex === 0 ? round + 1 : round;
 
-    if (newTurn > 3) {
-      get().addLog("SYSTEM", "GAME_OVER", `Match ended after 3 turns to conserve API limits.`);
-      set({ status: "finished", actionState: "idle" });
-      return;
-    }
+
 
     set({
       currentDetectiveIndex: nextIndex,

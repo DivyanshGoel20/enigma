@@ -53,6 +53,8 @@ export default function Home() {
     setActivePanel,
     showWinnerReveal,
     setShowWinnerReveal,
+    isPaused,
+    setPaused,
   } = useUIStore();
 
   // Helper for current active detective
@@ -64,7 +66,7 @@ export default function Home() {
   // 3. Automatic simulation loop
   useEffect(() => {
     if (status !== "playing") return;
-    if (isSyncing || error) return; // Halt loop on syncing or integration error
+    if (isSyncing || error || isPaused) return; // Halt loop on syncing, integration error, or if paused
 
     let timer: NodeJS.Timeout;
 
@@ -129,6 +131,7 @@ export default function Home() {
     setDiceAnimating,
     isSyncing,
     error,
+    isPaused,
   ]);
 
   // 4. Trigger monologue fetch when state transitions to idle (roll) or suggesting (investigate)
@@ -161,7 +164,7 @@ export default function Home() {
     if (status === "finished") {
       return winner
         ? `${DETECTIVE_BY_ID[winner]?.name} solved the murder!`
-        : "All detectives eliminated. Ashford Manor remains a mystery.";
+        : "All detectives eliminated. Enigma remains a mystery.";
     }
     if (!activeDetective) return "Initializing board...";
 
@@ -200,53 +203,128 @@ export default function Home() {
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#b89255] via-[#8a6a30] to-[#b89255]" />
             
             {/* Logo area */}
-            <div className="space-y-3">
-              <div className="wax-seal mx-auto w-16 h-16 shadow-[0_0_20px_rgba(139,17,17,0.4)]" />
-              <h2 className="text-3xl font-extrabold tracking-tight text-[#b89255]">
-                Ashford Manor Mystery
+            <div className="space-y-4">
+              <div className="wax-seal mx-auto w-16 h-16 shadow-[0_0_25px_rgba(155,28,28,0.5)]" />
+              <h2 className="text-4xl font-extrabold tracking-widest text-[#b89255] serif-title uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                Enigma
               </h2>
-              <p className="text-sm text-[#94a3b8] font-mono max-w-lg mx-auto">
-                A decentralized board game where five AI detective agents race to solve a murder, anchoring logs to 0G Storage & Chain.
+              <p className="text-base text-[#cbd5e1] serif-body italic max-w-2xl mx-auto leading-relaxed">
+                A 100% 0G-native deduction board game where five rival AI detective agents race to solve the Enigma murder, using hybrid-encrypted clues stored on 0G Storage and turn state anchored to the 0G Chain.
               </p>
             </div>
 
             {/* Detectives list */}
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 pt-4 border-t border-b border-white/5 py-6">
               {DETECTIVES.map((det) => (
-                <div key={det.id} className="bg-white/[0.02] border border-white/5 p-3.5 rounded-xl hover:border-white/10 transition-colors">
+                <div key={det.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-xl hover:border-white/10 transition-all duration-300 shadow-md">
                   <div
-                    className="w-8 h-8 rounded-full mx-auto flex items-center justify-center font-bold text-sm shadow-inner"
+                    className="w-10 h-10 rounded-full mx-auto flex items-center justify-center font-black text-base shadow-lg transition-transform hover:scale-110 cursor-default"
                     style={{
-                      backgroundColor: `${det.color}22`,
-                      color: det.color,
-                      border: `1px solid ${det.color}44`
+                      background: `radial-gradient(circle at 35% 35%, ${det.color} 0%, rgba(10,5,5,0.85) 100%)`,
+                      color: "#fff",
+                      border: `1px solid rgba(255,255,255,0.4)`
                     }}
                   >
                     {det.name.charAt(0)}
                   </div>
-                  <h4 className="text-xs font-bold mt-2 truncate" style={{ color: det.color }}>
+                  <h4 className="text-xs font-bold mt-3 truncate" style={{ color: det.color }}>
                     {det.name}
                   </h4>
-                  <span className="text-[9px] text-[#475569] block font-mono mt-0.5 truncate uppercase">
+                  <span className="text-[9px] text-[#64748b] block font-mono mt-0.5 truncate uppercase">
                     {det.id}
                   </span>
                 </div>
               ))}
             </div>
 
-            {/* Begin Case Button */}
+            {/* Begin Case Button / Loading Progress Bar */}
             <div className="pt-2">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => initGame()}
-                className="px-8 py-3.5 rounded-xl font-bold font-mono text-sm tracking-wider uppercase bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-black shadow-lg shadow-[#b89255]/20 hover:shadow-[#b89255]/35 transition-all cursor-pointer active:scale-95"
-              >
-                Begin Investigation
-              </motion.button>
-              <p className="text-[10px] text-[#475569] font-mono mt-3">
-                *The game will play automatically for up to 2 rounds once started.
-              </p>
+              {isSyncing ? (
+                (() => {
+                  const getLoaderProgress = () => {
+                    const msg = syncMessage || "";
+                    if (msg.includes("Generating RSA")) return { pct: 25, activeStep: 0 };
+                    if (msg.includes("Dealing cards")) return { pct: 50, activeStep: 1 };
+                    if (msg.includes("Encrypting and uploading")) return { pct: 75, activeStep: 2 };
+                    if (msg.includes("Anchoring game setup")) return { pct: 95, activeStep: 3 };
+                    return { pct: 10, activeStep: 0 };
+                  };
+
+                  const { pct, activeStep } = getLoaderProgress();
+                  const steps = [
+                    "Generate Secure RSA-OAEP Key Pairs",
+                    "Shuffle Clue Deck & Deal Cards",
+                    "Store Encrypted Clues on 0G Storage",
+                    "Anchor Turn Registries to 0G Chain"
+                  ];
+
+                  return (
+                    <div className="max-w-md mx-auto space-y-6 text-left bg-black/45 p-6 rounded-2xl border border-white/5 shadow-2xl relative">
+                      {/* Glow Header */}
+                      <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                        <span className="text-xs font-mono text-[#cbd5e1] font-semibold uppercase tracking-wider">0G Cryptographic Setup</span>
+                        <span className="text-sm font-mono text-[#b89255] font-black">{pct}%</span>
+                      </div>
+
+                      {/* Step list */}
+                      <div className="space-y-3.5">
+                        {steps.map((label, idx) => {
+                          const isDone = idx < activeStep;
+                          const isActive = idx === activeStep;
+                          return (
+                            <div key={label} className="flex items-center gap-3 text-xs font-mono">
+                              {isDone ? (
+                                <span className="w-5 h-5 rounded-full bg-green-500/10 border border-green-500/30 text-green-400 flex items-center justify-center font-bold text-[9px] shrink-0">
+                                  ✓
+                                </span>
+                              ) : isActive ? (
+                                <span className="w-5 h-5 rounded-full bg-[#b89255]/10 border border-[#b89255]/30 text-[#b89255] flex items-center justify-center font-bold text-[9px] shrink-0 animate-pulse">
+                                  ⏳
+                                </span>
+                              ) : (
+                                <span className="w-5 h-5 rounded-full bg-white/[0.02] border border-white/5 text-gray-600 flex items-center justify-center font-medium text-[8px] shrink-0">
+                                  {idx + 1}
+                                </span>
+                              )}
+                              <span className={`${isDone ? "text-gray-400 line-through" : isActive ? "text-white font-semibold" : "text-gray-600"}`}>
+                                {label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Premium Glowing Gold Bar */}
+                      <div className="h-2 w-full rounded-full bg-white/[0.04] overflow-hidden relative border border-white/5 mt-4">
+                        <motion.div
+                          className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#b89255] via-[#e0b571] to-[#b89255] shadow-[0_0_8px_rgba(184,146,85,0.4)]"
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.5, ease: "easeInOut" }}
+                        />
+                      </div>
+
+                      {/* Status subtitle */}
+                      <div className="text-[10px] font-mono text-[#64748b] text-center italic mt-2 animate-pulse truncate">
+                        {syncMessage}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <>
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => initGame()}
+                    className="px-8 py-4 rounded-xl font-bold font-mono text-xs tracking-widest uppercase bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-[#0f0a05] border border-[#d4aa6a]/40 shadow-xl shadow-black/50 hover:shadow-[#b89255]/25 transition-all cursor-pointer active:scale-95"
+                  >
+                    Begin Investigation
+                  </motion.button>
+                  <p className="text-[10px] text-[#64748b] font-mono mt-3">
+                    *The game will play automatically until the case is solved or all detectives are eliminated.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </main>
@@ -260,7 +338,7 @@ export default function Home() {
       <Header />
 
       {/* Main content container */}
-      <main className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full flex flex-col gap-6">
+      <main className="flex-1 p-4 md:p-6 lg:p-8 w-full max-w-[1600px] mx-auto flex flex-col gap-6">
         
         {/* Error State Warning Block */}
         {error && (
@@ -304,26 +382,40 @@ export default function Home() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch w-full">
         
-        {/* Left Column: Board (Span 2) */}
-        <section className="lg:col-span-2 flex flex-col gap-6">
-          <div className="glass-panel p-4 md:p-6 shadow-2xl flex flex-col items-center">
+        {/* Left Column: Board (50% Split) */}
+        <section className="lg:col-span-1 flex flex-col gap-6 w-full self-start lg:sticky lg:top-6">
+          <div className="glass-panel p-4 md:p-5 shadow-2xl flex flex-col items-center justify-start w-full">
             {/* Active turn header */}
             <div className="w-full flex items-center justify-between border-b border-white/5 pb-3 mb-4 text-xs font-mono">
               <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-[#b89255] animate-pulse" />
-                <span className="text-[#94a3b8]">Rival Investigation Status</span>
+                <span className="flex h-2.5 w-2.5 rounded-full bg-[#b89255] animate-pulse" />
+                <span className="text-[#cbd5e1] font-bold uppercase tracking-wider">Investigation Board</span>
               </div>
-              {activeDetective && (
-                <span style={{ color: activeDetective.color }} className="font-bold">
-                  {activeDetective.name}&apos;s Move
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {status === "playing" && (
+                  <button
+                    onClick={() => setPaused(!isPaused)}
+                    className={`px-2.5 py-1 rounded border text-[9px] font-bold font-mono transition-all cursor-pointer flex items-center gap-1 active:scale-95 ${
+                      isPaused
+                        ? "bg-[#10b981]/10 border-[#10b981]/30 text-[#10b981] hover:bg-[#10b981]/20 hover:border-[#10b981]/50"
+                        : "bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b] hover:bg-[#f59e0b]/20 hover:border-[#f59e0b]/50"
+                    }`}
+                  >
+                    {isPaused ? "▶ Resume" : "⏸ Pause"}
+                  </button>
+                )}
+                {activeDetective && (
+                  <span style={{ color: activeDetective.color }} className="font-bold uppercase tracking-wider">
+                    {activeDetective.name}&apos;s Turn
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Board renderer */}
-            <div className="w-full max-w-[500px]">
+            <div className="w-full max-w-[620px] xl:max-w-[700px] mx-auto transition-all">
               <GameBoard
                 detectives={detectives}
                 activeDetectiveId={activeDetectiveId}
@@ -355,9 +447,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Right Column: Spectator Panels (Span 1) */}
-        <section className="lg:col-span-1 h-full flex flex-col gap-6">
-          <div className="glass-panel shadow-xl flex-1 flex flex-col min-h-[580px] max-h-[700px]">
+        {/* Right Column: Spectator Panels (50% Split) */}
+        <section className="lg:col-span-1 flex flex-col gap-6 h-full">
+          <div className="glass-panel shadow-xl flex flex-col h-[700px] xl:h-[780px] overflow-hidden">
             {/* Panel Tabs Header */}
             <div className="flex border-b border-white/5 bg-black/10 rounded-t-2xl">
               {(["feed", "suspicion", "detectives"] as const).map((tab) => {
@@ -399,6 +491,8 @@ export default function Home() {
                   confidence={confidence}
                   activeDetectiveId={activeDetectiveId}
                   eliminatedIds={detectives.filter((d) => d.eliminated).map((d) => d.id)}
+                  detectives={detectives}
+                  notebooks={notebooks}
                 />
               )}
               {activePanel === "detectives" && (
@@ -433,11 +527,11 @@ export default function Home() {
               {/* Header */}
               <div className="bg-gradient-to-b from-[#b89255]/20 to-transparent p-6 text-center border-b border-white/5 relative">
                 <Trophy className="w-16 h-16 mx-auto text-[#b89255] animate-bounce" />
-                <h2 className="text-xl font-bold mt-4 text-[#b89255] uppercase tracking-wide">
+                <h2 className="text-xl font-extrabold mt-4 text-[#b89255] serif-title uppercase tracking-widest">
                   Case Solved!
                 </h2>
                 <p className="text-xs text-[#94a3b8] font-mono mt-1">
-                  Ashford Manor Mystery concluded
+                  Enigma concluded
                 </p>
               </div>
 

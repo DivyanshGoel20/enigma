@@ -25,36 +25,45 @@ export function DetectivePawn({
       layout
       initial={{ scale: 0, opacity: 0 }}
       animate={{
-        scale: isEliminated ? 0.55 : 1,
+        scale: isEliminated ? 0.6 : 1,
         opacity: isEliminated ? 0.35 : 1,
+        y: isActive ? [0, -3, 0] : 0,
       }}
-      transition={{ type: "spring", stiffness: 380, damping: 28 }}
-      className="absolute flex items-center justify-center rounded-full shadow-lg pointer-events-none select-none"
+      transition={{
+        scale: { type: "spring", stiffness: 380, damping: 28 },
+        y: isActive ? { duration: 2, repeat: Infinity, ease: "easeInOut" } : {},
+      }}
+      className="absolute flex items-center justify-center rounded-full shadow-2xl pointer-events-none select-none"
       style={{
-        width: "clamp(10px, 1.4vw, 20px)",
-        height: "clamp(10px, 1.4vw, 20px)",
-        backgroundColor: color,
+        width: "clamp(16px, 2vw, 26px)",
+        height: "clamp(16px, 2vw, 26px)",
+        background: `radial-gradient(circle at 35% 35%, ${color} 0%, rgba(10,5,5,0.85) 100%)`,
         border: isActive
-          ? `2px solid #fff`
-          : `1.5px solid rgba(255,255,255,0.25)`,
+          ? `2px solid #b89255`
+          : `1.5px solid rgba(255,255,255,0.45)`,
         boxShadow: isActive
-          ? `0 0 8px 2px ${color}88, 0 2px 6px rgba(0,0,0,0.6)`
-          : `0 2px 4px rgba(0,0,0,0.5)`,
-        zIndex: isActive ? 20 : 10 + stackIndex,
+          ? `0 0 15px 3px ${color}aa, 0 4px 10px rgba(0,0,0,0.8)`
+          : `0 4px 6px rgba(0,0,0,0.6)`,
+        zIndex: isActive ? 50 : 20 + stackIndex,
         transform: `translate(${offset}px, ${offset}px)`,
       }}
       title={name}
     >
+      {/* Monogram initial of the detective */}
+      <span className="text-[10px] sm:text-[11px] font-black font-mono text-white/90 drop-shadow-[0_1.5px_2px_rgba(0,0,0,0.95)]">
+        {name.charAt(0)}
+      </span>
+
       {isActive && (
         <motion.div
           className="absolute rounded-full"
           style={{
             width: "140%",
             height: "140%",
-            border: `1.5px solid ${color}`,
+            border: `2px solid ${color}`,
             opacity: 0.6,
           }}
-          animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0, 0.6] }}
+          animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
           transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
