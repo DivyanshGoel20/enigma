@@ -203,8 +203,12 @@ export default function Home() {
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#b89255] via-[#8a6a30] to-[#b89255]" />
             
             {/* Logo area */}
-            <div className="space-y-4">
-              <div className="wax-seal mx-auto w-16 h-16 shadow-[0_0_25px_rgba(155,28,28,0.5)]" />
+            <div className="space-y-4 flex flex-col items-center">
+              <img
+                src="/logo.png"
+                alt="Enigma Logo"
+                className="w-24 h-24 object-contain rounded-2xl border border-[#b89255]/20 shadow-xl shadow-black/40 hover:scale-105 transition-transform duration-300"
+              />
               <h2 className="text-4xl font-extrabold tracking-widest text-[#b89255] serif-title uppercase drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                 Enigma
               </h2>

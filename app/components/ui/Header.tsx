@@ -13,7 +13,11 @@ export function Header() {
     <header className="border-b border-white/5 bg-[#0d1117]/80 backdrop-blur-md sticky top-0 z-50 py-4 px-6 md:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
       {/* Title */}
       <div className="flex items-center gap-3">
-        <div className="wax-seal" />
+        <img
+          src="/logo.png"
+          alt="Enigma Logo"
+          className="w-8 h-8 object-contain rounded-lg border border-[#b89255]/20 shadow-md"
+        />
         <div>
           <h1 className="text-xl font-extrabold tracking-wider text-[#b89255] serif-title uppercase">
             Enigma
