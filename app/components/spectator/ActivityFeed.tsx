@@ -82,7 +82,7 @@ export function ActivityFeed({ log }: ActivityFeedProps) {
                   <p className="text-[10px] text-[#94a3b8] leading-snug">{entry.details}</p>
                   
                   {/* Explorer links */}
-                  {(entry.txHash || entry.rootHash) && (
+                  {(entry.txHash || entry.rootHash || entry.txSeq !== undefined) && (
                     <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 pt-1 border-t border-white/[0.03] text-[9px] font-mono text-[#64748b]">
                       {entry.txHash && (
                         <a
@@ -94,16 +94,20 @@ export function ActivityFeed({ log }: ActivityFeedProps) {
                           🔗 Chain Tx: {entry.txHash.substring(0, 10)}...
                         </a>
                       )}
-                      {entry.rootHash && (
+                      {entry.txSeq !== undefined ? (
                         <a
-                          href={`https://storagescan-galileo.0g.ai/tx/${entry.txHash || entry.rootHash}`}
+                          href={`https://storagescan-galileo.0g.ai/submission/${entry.txSeq}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:text-[#06b6d4] transition-colors underline flex items-center gap-0.5"
                         >
-                          📦 Storage: {entry.rootHash.substring(0, 10)}...
+                          📦 Storage: #{entry.txSeq}
                         </a>
-                      )}
+                      ) : entry.rootHash ? (
+                        <span className="flex items-center gap-0.5 text-gray-500" title={entry.rootHash}>
+                          📦 Storage Hash: {entry.rootHash.substring(0, 10)}...
+                        </span>
+                      ) : null}
                     </div>
                   )}
                 </div>

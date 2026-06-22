@@ -64,20 +64,24 @@ export async function POST(request: Request) {
 
     let rootHash = "";
     let txHash = "";
+    let txSeq: number | undefined;
 
     if ("rootHash" in res) {
       rootHash = res.rootHash;
       txHash = res.txHash;
+      txSeq = res.txSeq;
     } else {
       rootHash = res.rootHashes[0];
       txHash = res.txHashes[0];
+      txSeq = res.txSeqs[0];
     }
 
-    console.log("[0G Storage] Upload completed successfully. Root hash:", rootHash);
+    console.log("[0G Storage] Upload completed successfully. Root hash:", rootHash, "txSeq:", txSeq);
     return NextResponse.json({
       ok: true,
       rootHash,
       txHash,
+      txSeq,
       simulated: false
     });
 

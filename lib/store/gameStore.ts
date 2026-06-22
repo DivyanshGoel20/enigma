@@ -15,6 +15,8 @@ import type {
 import {
   DETECTIVES,
   STARTING_POSITIONS,
+  ROOMS,
+  ROOM_BY_ID,
 } from "@/lib/game/constants";
 import {
   setupDeck,
@@ -86,6 +88,7 @@ export interface GameState {
   syncMessage: string | null;
   error: string | null;
   derivedAddress: string;
+  privateKeys: Record<DetectiveId, string>;
 }
 
 export interface GameActions {
@@ -100,7 +103,8 @@ export interface GameActions {
     action: string,
     details: string,
     txHash?: string,
-    rootHash?: string
+    rootHash?: string,
+    txSeq?: number
   ) => void;
   fetchAIMonologue: (agentId: DetectiveId, context: string, action: string) => Promise<void>;
 }
@@ -146,6 +150,7 @@ const INITIAL_STATE: GameState = {
   syncMessage: null,
   error: null,
   derivedAddress: DERIVED_WALLET_ADDRESS,
+  privateKeys: {} as Record<DetectiveId, string>,
 };
 
 // ============================================================
@@ -169,9 +174,11 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
     try {
       const { generateKeyPair } = await import("@/lib/crypto/hybrid");
+      const privateKeys: Record<DetectiveId, string> = {} as Record<DetectiveId, string>;
       const detectives: DetectiveState[] = await Promise.all(
         DETECTIVES.map(async (d) => {
           const keys = await generateKeyPair();
+          privateKeys[d.id] = keys.privateKey;
           return {
             id: d.id,
             name: d.name,
@@ -224,6 +231,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         details: `Dealt hands and secret envelope encrypted and stored in 0G Storage.`,
         isEncrypted: false,
         rootHash: resData.rootHash,
+        txSeq: resData.txSeq,
       };
 
       set({
@@ -235,6 +243,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         currentDetectiveIndex: 0,
         actionState: "idle",
         detectives,
+        privateKeys,
         detectiveOrder: detectiveIds,
         envelope,
         hands,
@@ -275,15 +284,29 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       const activeId = detectiveOrder[currentDetectiveIndex];
       const detective = detectives.find((d) => d.id === activeId)!;
 
-      // Compute reachable doors for target selection by AI
-      const reachableDoors = getReachableDoors(detective.position, roll);
+      // Compute paths to doors of OTHER rooms, sorting by distance to pick the closest target
+      const currentRoomId = detective.currentRoom;
+      const candidatePaths: { roomId: string; door: Position; distance: number; path: Position[] }[] = [];
+      for (const room of ROOMS) {
+        if (room.id === currentRoomId) continue;
+        for (const door of room.doors) {
+          const p = findPath(detective.position, door);
+          if (p && p.length > 1) {
+            candidatePaths.push({
+              roomId: room.id,
+              door,
+              distance: p.length - 1,
+              path: p,
+            });
+          }
+        }
+      }
 
-      // auto-pick closest reachable door, or just move forward
-      let targetDoor = reachableDoors.sort((a, b) => a.distance - b.distance)[0];
+      candidatePaths.sort((a, b) => a.distance - b.distance);
+
       let path: Position[] | null = null;
-
-      if (targetDoor) {
-        path = findPath(detective.position, targetDoor.door);
+      if (candidatePaths.length > 0) {
+        path = candidatePaths[0].path;
       }
 
       if (!path || path.length === 0) {
@@ -335,7 +358,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         "ROLL",
         `Rolled a ${roll}. Moving ${clampedPath.length - 1} step(s).`,
         chainData.txHash,
-        storageData.rootHash
+        storageData.rootHash,
+        storageData.txSeq
       );
     } catch (err: any) {
       console.error("[0G Move] Dice roll sync failed:", err);
@@ -444,6 +468,19 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
       set({ syncMessage: "Anchoring suggestion and disproval to 0G Storage & Chain..." });
 
+      // Move the suspected detective to this room's center coordinate
+      const roomConfig = ROOM_BY_ID[suggestion.room];
+      const updatedDetectives = detectives.map((d) => {
+        if (d.id === finalSuspect) {
+          return {
+            ...d,
+            position: { ...roomConfig.center },
+            currentRoom: suggestion.room,
+          };
+        }
+        return d;
+      });
+
       const result = processSuggestion(suggestion, activeId, detectiveOrder, hands);
 
       let updatedNotebooks = { ...notebooks };
@@ -490,6 +527,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       // 3. Anchor & upload disproval reveal
       let revealRootHash = "";
       let revealTxHash = "";
+      let revealTxSeq: number | undefined;
 
       if (result) {
         const { encryptPayload, buildCluePayload } = await import("@/lib/crypto/hybrid");
@@ -520,6 +558,19 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           throw new Error(revealStorageData.error || `Failed to upload encrypted reveal to 0G Storage: HTTP ${revealStorageRes.status}`);
         }
         revealRootHash = revealStorageData.rootHash;
+        revealTxSeq = revealStorageData.txSeq;
+
+        // Verify decryption using recipient's private key
+        try {
+          const { decryptPayload } = await import("@/lib/crypto/hybrid");
+          const privateKey = get().privateKeys[activeId];
+          if (privateKey) {
+            const decrypted = await decryptPayload<any>(encryptedBundle, privateKey);
+            console.log(`[0G Verification] Decrypted clue for ${activeId} from 0G storage bundle successfully! Card: ${decrypted.cardName}`);
+          }
+        } catch (decErr) {
+          console.error("[0G Verification] Decryption verification test failed:", decErr);
+        }
 
         const revealChainRes = await fetch("/api/chain/record", {
           method: "POST",
@@ -548,6 +599,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           throw new Error(revealStorageData.error || `Failed to upload reveal-none to 0G Storage: HTTP ${revealStorageRes.status}`);
         }
         revealRootHash = revealStorageData.rootHash;
+        revealTxSeq = revealStorageData.txSeq;
 
         const revealChainRes = await fetch("/api/chain/record", {
           method: "POST",
@@ -568,6 +620,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         notebooks: updatedNotebooks,
         confidence: updatedConfidence,
         pendingSuggestion: suggestion,
+        detectives: updatedDetectives,
         actionState: solution ? "accusing" : "next_turn_pending",
         isSyncing: false,
         syncMessage: null,
@@ -578,7 +631,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         "SUGGEST",
         `Suggests: ${suggestion.suspect} | ${suggestion.weapon} | ${suggestion.room}`,
         suggestChainData.txHash,
-        suggestStorageData.rootHash
+        suggestStorageData.rootHash,
+        suggestStorageData.txSeq
+      );
+
+      // Log that the suspected detective was brought to the room
+      get().addLog(
+        finalSuspect,
+        "ENTER_ROOM",
+        `Was summoned to the ${suggestion.room.replace(/_/g, " ")} for questioning.`
       );
 
       if (result) {
@@ -587,7 +648,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           "DISPROVE",
           `Showed a card to ${activeId}. (Encrypted 0G Storage Clue Reveal)`,
           revealTxHash,
-          revealRootHash
+          revealRootHash,
+          revealTxSeq
         );
       } else {
         get().addLog(
@@ -595,7 +657,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           "NO_DISPROVAL",
           `Nobody could disprove the suggestion!`,
           revealTxHash,
-          revealRootHash
+          revealRootHash,
+          revealTxSeq
         );
       }
     } catch (err: any) {
@@ -699,8 +762,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     const newTurn = turn + 1;
     const newRound = nextIndex === 0 ? round + 1 : round;
 
-    if (newRound > 2) {
-      get().addLog("SYSTEM", "GAME_OVER", `Match ended after 2 rounds to conserve API limits.`);
+    if (newTurn > 3) {
+      get().addLog("SYSTEM", "GAME_OVER", `Match ended after 3 turns to conserve API limits.`);
       set({ status: "finished", actionState: "idle" });
       return;
     }
@@ -724,7 +787,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
   },
 
   // ── Log helper ───────────────────────────────────────────
-  addLog: (agentId, action, details, txHash, rootHash) => {
+  addLog: (agentId, action, details, txHash, rootHash, txSeq) => {
     const entry: LogEntry = {
       id: makeId(),
       timestamp: Date.now(),
@@ -734,6 +797,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       isEncrypted: false,
       txHash,
       rootHash,
+      txSeq,
     };
     set((s) => ({ log: [...s.log, entry] }));
   },
