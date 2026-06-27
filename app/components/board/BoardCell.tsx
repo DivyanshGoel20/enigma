@@ -66,16 +66,16 @@ export const BoardCell = memo(function BoardCell({
   switch (cellType) {
     case "hallway":
       bg = isHighlighted
-        ? "radial-gradient(circle, rgba(184,146,85,0.4) 0%, rgba(184,146,85,0.15) 100%)"
+        ? "radial-gradient(circle, rgba(212,175,55,0.7) 0%, rgba(184,146,85,0.3) 60%, rgba(184,146,85,0.1) 100%)"
         : "radial-gradient(circle at center, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.25) 100%)";
-      border = isHighlighted ? "border-[#b89255]/60" : "border-white/[0.04]";
+      border = isHighlighted ? "border-[#d4af37] border-2 shadow-[0_0_12px_rgba(212,175,55,0.85)] z-20" : "border-white/[0.04]";
       break;
     case "door":
       bg = isHighlighted
-        ? "radial-gradient(circle, rgba(184,146,85,0.5) 0%, rgba(184,146,85,0.25) 100%)"
+        ? "radial-gradient(circle, rgba(212,175,55,0.85) 0%, rgba(184,146,85,0.4) 60%, rgba(184,146,85,0.15) 100%)"
         : (roomId ? "rgba(184,146,85,0.15)" : "rgba(255,255,255,0.06)");
-      border = "border-[#b89255]/40 border-dashed border-2";
-      extraClass = "ring-1 ring-[#b89255]/30 shadow-[inset_0_0_8px_rgba(184,146,85,0.15)]";
+      border = isHighlighted ? "border-[#d4af37] border-2 shadow-[0_0_12px_rgba(212,175,55,0.9)] z-20" : "border-[#b89255]/40 border-dashed border-2";
+      extraClass = isHighlighted ? "" : "ring-1 ring-[#b89255]/30 shadow-[inset_0_0_8px_rgba(184,146,85,0.15)]";
       break;
     case "wall":
       bg = "transparent";
@@ -83,9 +83,9 @@ export const BoardCell = memo(function BoardCell({
       break;
     case "room_center":
       bg = isHighlighted
-        ? "radial-gradient(circle, rgba(184,146,85,0.4) 0%, rgba(184,146,85,0.15) 100%)"
+        ? "radial-gradient(circle, rgba(212,175,55,0.7) 0%, rgba(184,146,85,0.3) 60%, rgba(184,146,85,0.1) 100%)"
         : "transparent";
-      border = isHighlighted ? "border-[#b89255]/60" : "border-transparent";
+      border = isHighlighted ? "border-[#d4af37] border-2 shadow-[0_0_12px_rgba(212,175,55,0.85)] z-20" : "border-transparent";
       break;
   }
 
@@ -107,12 +107,19 @@ export const BoardCell = memo(function BoardCell({
     <div
       onClick={isHighlighted ? onClick : undefined}
       className={`relative flex items-center justify-center border ${border} ${extraClass} transition-colors duration-150 ${
-        isHighlighted ? "hover:brightness-125 hover:shadow-[0_0_8px_rgba(184,146,85,0.6)] cursor-pointer" : ""
+        isHighlighted ? "hover:brightness-125 hover:shadow-[0_0_15px_rgba(212,175,55,0.9)] cursor-pointer" : ""
       }`}
       style={{ backgroundColor: bg, cursor: isHighlighted ? "pointer" : cursor, ...borderStyle }}
       data-cell={`${x},${y}`}
       data-type={cellType}
     >
+
+      {isHighlighted && (
+        <>
+          <span className="absolute w-2 h-2 rounded-full bg-[#d4af37] shadow-[0_0_10px_#d4af37] animate-ping pointer-events-none z-10" />
+          <span className="absolute w-1.5 h-1.5 rounded-full bg-[#d4af37] shadow-[0_0_6px_#d4af37] pointer-events-none z-10" />
+        </>
+      )}
 
       {cellType === "door" && (
         <span

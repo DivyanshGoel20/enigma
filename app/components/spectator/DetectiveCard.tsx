@@ -51,6 +51,7 @@ interface DetectiveCardProps {
   isActive: boolean;
   notebook?: DeductionNotebook;
   confidence: number;
+  humanDetectiveId?: DetectiveId | null;
 }
 
 export function DetectiveCard({
@@ -58,9 +59,12 @@ export function DetectiveCard({
   isActive,
   notebook,
   confidence,
+  humanDetectiveId = null,
 }: DetectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const meta = DETECTIVE_BY_ID[detective.id];
+
+  const showCaseFileButton = humanDetectiveId === null;
 
   // Count eliminated cards in their notebook
   const getEliminationStats = () => {
@@ -81,7 +85,6 @@ export function DetectiveCard({
   };
 
   const stats = getEliminationStats();
-  const pct = Math.round(confidence * 100);
 
   return (
     <motion.div
@@ -150,23 +153,14 @@ export function DetectiveCard({
         </div>
 
         {/* Clues solved */}
-        <div className="flex justify-between items-center">
-          <span>Notebook progress</span>
-          <span className="text-[#f1f5f9]">
-            {stats.eliminated} / {stats.total} clues
-          </span>
-        </div>
-
-        {/* Evolving confidence */}
-        <div className="flex justify-between items-center">
-          <span>Confidence</span>
-          <span
-            className="font-bold"
-            style={{ color: detective.eliminated ? "#64748b" : detective.color }}
-          >
-            {pct}%
-          </span>
-        </div>
+        {!(humanDetectiveId && detective.id !== humanDetectiveId) && (
+          <div className="flex justify-between items-center">
+            <span>Notebook progress</span>
+            <span className="text-[#f1f5f9]">
+              {stats.eliminated} / {stats.total} clues
+            </span>
+          </div>
+        )}
 
         {/* Public key scrollable block */}
         <div className="flex flex-col gap-1 text-[9px] opacity-75 mt-1.5 border-t border-white/[0.03] pt-1.5">
@@ -177,30 +171,19 @@ export function DetectiveCard({
         </div>
       </div>
 
-      {/* Confidence progress bar */}
-      {!detective.eliminated && (
-        <div className="mt-3 h-1 w-full rounded-full bg-white/[0.04] overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              backgroundColor: detective.color,
-              width: `${pct}%`,
-            }}
-          />
-        </div>
-      )}
-
       {/* Toggle View Case File Button */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full mt-3 py-1 bg-white/[0.03] border border-white/5 hover:border-[#b89255]/40 hover:bg-[#b89255]/5 rounded-lg text-[9px] font-bold font-mono text-[#cbd5e1] transition-all cursor-pointer text-center block"
-      >
-        {isExpanded ? "Collapse Case File" : "Open Detective Case File"}
-      </button>
+      {showCaseFileButton && (
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full mt-3 py-1 bg-white/[0.03] border border-white/5 hover:border-[#b89255]/40 hover:bg-[#b89255]/5 rounded-lg text-[9px] font-bold font-mono text-[#cbd5e1] transition-all cursor-pointer text-center block"
+        >
+          {isExpanded ? "Collapse Case File" : "Open Detective Case File"}
+        </button>
+      )}
 
       {/* Expandable Clues Details */}
       <AnimatePresence>
-        {isExpanded && (
+        {showCaseFileButton && isExpanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -219,21 +202,40 @@ export function DetectiveCard({
                     <motion.div
                       key={card.id}
                       whileHover={{ y: -3, scale: 1.05 }}
-                      className={`w-16 h-24 rounded-lg border relative flex flex-col justify-between p-2 shadow-lg ${details.color} bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0`}
+                      className="w-16 h-24 rounded-lg border relative flex flex-col justify-between p-2 shadow-lg bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0"
+                      style={{ borderColor: details.icon === "👤" ? "rgba(167,139,250,0.2)" : details.icon === "🗡️" ? "rgba(245,158,11,0.2)" : "rgba(6,182,212,0.2)" }}
                     >
+                      {/* Card background artwork overlay */}
+                      <div
+                        className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-85"
+                        style={{
+                          backgroundImage: `url(${
+                            details.type === "SUSPECT"
+                              ? "/suspect_card_bg.png"
+                              : details.type === "WEAPON"
+                              ? "/weapon_card_bg.png"
+                              : "/room_card_bg.png"
+                          })`
+                        }}
+                      />
+                      {/* Dark gradient for text readability */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/25 pointer-events-none z-10" />
+
                       {/* Top banner / icon */}
-                      <div className="flex items-center justify-between text-[7px] font-mono opacity-80">
-                        <span className="font-bold tracking-widest">{details.type.substring(0, 4)}</span>
+                      <div className={`flex items-center justify-between text-[7px] font-mono font-bold uppercase tracking-wider z-20 ${
+                        details.type === "SUSPECT" ? "text-[#a78bfa]" : details.type === "WEAPON" ? "text-[#f59e0b]" : "text-[#06b6d4]"
+                      }`}>
+                        <span className="tracking-wide">{details.type}</span>
                         <span>{details.icon}</span>
                       </div>
                       
-                      {/* Middle card artwork */}
-                      <div className="flex-1 flex items-center justify-center text-lg my-0.5 opacity-70">
+                      {/* Middle card artwork placeholder slot */}
+                      <div className="flex-1 flex items-center justify-center text-lg my-0.5 opacity-20 z-20">
                         {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
                       </div>
                       
                       {/* Card name */}
-                      <div className="text-[7.5px] font-serif font-black uppercase text-center leading-tight tracking-wider truncate text-white border-t border-white/5 pt-1">
+                      <div className="text-[7.5px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1 z-20 w-full px-0.5 break-words">
                         {card.name.replace(/_/g, " ")}
                       </div>
                     </motion.div>

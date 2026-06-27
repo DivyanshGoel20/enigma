@@ -348,6 +348,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         txSeq: resData.txSeq,
       };
 
+      const envelopeCheatLog: LogEntry = {
+        id: makeId(),
+        timestamp: Date.now() + 10,
+        agentId: "SYSTEM",
+        action: "NO_DISPROVAL",
+        details: `🚨 [CONFIDENTIAL CASE FILE] The solution envelope contains: Suspect - ${DETECTIVE_BY_ID[envelope.suspect]?.name || envelope.suspect}, Weapon - ${envelope.weapon.replace(/_/g, " ")}, Room - ${envelope.room.replace(/_/g, " ")}. Use this to make your accusation!`,
+        isEncrypted: false,
+      };
+
       set({ syncMessage: "Anchoring game setup registry onto the 0G Chain..." });
       await new Promise((resolve) => setTimeout(resolve, 800));
 
@@ -366,7 +375,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         hands,
         notebooks,
         confidence,
-        log: [initLog, uploadLog],
+        log: [initLog, uploadLog, envelopeCheatLog],
         isSyncing: false,
         syncMessage: null,
         error: null,

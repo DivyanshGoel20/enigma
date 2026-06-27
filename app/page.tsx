@@ -89,12 +89,87 @@ export default function Home() {
 
   // Local state for single-player interactions
   const [selectedRole, setSelectedRole] = useState<DetectiveId | "spectator">("spectator");
+  const [setupStep, setSetupStep] = useState<"modes" | "characters">("modes");
   const [suggestionSuspect, setSuggestionSuspect] = useState<DetectiveId>("VANCE");
   const [suggestionWeapon, setSuggestionWeapon] = useState<WeaponId>("PEARL_PISTOL");
   const [showAccusationModal, setShowAccusationModal] = useState(false);
   const [accusationSuspect, setAccusationSuspect] = useState<DetectiveId>("VANCE");
   const [accusationWeapon, setAccusationWeapon] = useState<WeaponId>("PEARL_PISTOL");
   const [accusationRoom, setAccusationRoom] = useState<RoomId>("GRAND_FOYER");
+
+  // Local state for manual interactive clue notebook checklist (cycles: POSSIBLE -> ELIMINATED -> REVIEW -> POSSIBLE)
+  const [manualNotebook, setManualNotebook] = useState<Record<string, "POSSIBLE" | "ELIMINATED" | "REVIEW" >> (() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("enigma_manual_notebook");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {}
+      }
+    }
+    const defaultState: Record<string, "POSSIBLE" | "ELIMINATED" | "REVIEW"> = {};
+    DETECTIVES.forEach((d) => { defaultState[d.id] = "POSSIBLE"; });
+    WEAPONS.forEach((w) => { defaultState[w.id] = "POSSIBLE"; });
+    ROOMS.forEach((r) => { defaultState[r.id] = "POSSIBLE"; });
+    return defaultState;
+  });
+
+  // Save manual notebook to localStorage
+  useEffect(() => {
+    localStorage.setItem("enigma_manual_notebook", JSON.stringify(manualNotebook));
+  }, [manualNotebook]);
+
+  // Pre-fill manual notebook with user's starting hand when game starts
+  useEffect(() => {
+    if (status === "playing" && humanDetectiveId) {
+      const humanDet = detectives.find((d) => d.id === humanDetectiveId);
+      if (humanDet) {
+        setManualNotebook((prev) => {
+          const updated = { ...prev };
+          humanDet.cards.forEach((card) => {
+            updated[card.id] = "ELIMINATED"; // Hold it in our hand, so cross it out!
+          });
+          return updated;
+        });
+      }
+    }
+  }, [status, humanDetectiveId, detectives]);
+
+  // Reset helper
+  const handleBeginGame = () => {
+    const defaultState: Record<string, "POSSIBLE" | "ELIMINATED" | "REVIEW"> = {};
+    DETECTIVES.forEach((d) => { defaultState[d.id] = "POSSIBLE"; });
+    WEAPONS.forEach((w) => { defaultState[w.id] = "POSSIBLE"; });
+    ROOMS.forEach((r) => { defaultState[r.id] = "POSSIBLE"; });
+    setManualNotebook(defaultState);
+    initGame(selectedRole === "spectator" ? null : selectedRole);
+  };
+
+  const handleSelectSpectator = () => {
+    setSelectedRole("spectator");
+    const defaultState: Record<string, "POSSIBLE" | "ELIMINATED" | "REVIEW"> = {};
+    DETECTIVES.forEach((d) => { defaultState[d.id] = "POSSIBLE"; });
+    WEAPONS.forEach((w) => { defaultState[w.id] = "POSSIBLE"; });
+    ROOMS.forEach((r) => { defaultState[r.id] = "POSSIBLE"; });
+    setManualNotebook(defaultState);
+    initGame(null);
+  };
+
+  const handleSelectSinglePlayerMode = () => {
+    setSelectedRole("VANCE");
+    setSetupStep("characters");
+  };
+
+  const toggleManualCard = (id: string) => {
+    setManualNotebook((prev) => {
+      const current = prev[id] || "POSSIBLE";
+      let next: "POSSIBLE" | "ELIMINATED" | "REVIEW" = "POSSIBLE";
+      if (current === "POSSIBLE") next = "ELIMINATED";
+      else if (current === "ELIMINATED") next = "REVIEW";
+      else next = "POSSIBLE";
+      return { ...prev, [id]: next };
+    });
+  };
 
   // Helper for current active detective
   const activeDetectiveId = detectiveOrder[currentDetectiveIndex];
@@ -261,72 +336,7 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Choose Role Section */}
-            <div className="space-y-4 pt-4 border-t border-white/5 text-center">
-              <h3 className="text-xs font-mono font-bold text-[#b89255] uppercase tracking-wider">
-                Select Your Role
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
-                {/* Spectator card */}
-                <div
-                  onClick={() => setSelectedRole("spectator")}
-                  className={`cursor-pointer glass-panel p-3 rounded-xl border transition-all duration-300 text-left flex flex-col justify-between h-28 relative ${
-                    selectedRole === "spectator"
-                      ? "border-[#b89255] bg-[#b89255]/5 shadow-[0_0_15px_rgba(184,146,85,0.2)]"
-                      : "border-white/5 hover:border-white/10 bg-white/[0.01]"
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="text-[11px] font-mono font-bold text-white uppercase tracking-wide">
-                      Spectator
-                    </span>
-                    {selectedRole === "spectator" && (
-                      <span className="text-[8px] bg-[#b89255]/20 text-[#b89255] px-1 py-0.5 rounded font-mono uppercase font-bold border border-[#b89255]/30">
-                        Selected
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[9px] text-[#94a3b8] leading-relaxed">
-                    Watch all 5 AI detectives solve the murder case automatically.
-                  </p>
-                </div>
-
-                {/* Detective cards */}
-                {DETECTIVES.map((det) => (
-                  <div
-                    key={det.id}
-                    onClick={() => setSelectedRole(det.id)}
-                    className={`cursor-pointer glass-panel p-3 rounded-xl border transition-all duration-300 text-left flex flex-col justify-between h-28 relative ${
-                      selectedRole === det.id
-                        ? "border-[#b89255] bg-[#b89255]/5 shadow-[0_0_15px_rgba(184,146,85,0.2)]"
-                        : "border-white/5 hover:border-white/10 bg-white/[0.01]"
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: det.color }}
-                        />
-                        <span className="text-[11px] font-bold text-white tracking-wide truncate">
-                          {det.name}
-                        </span>
-                      </div>
-                      {selectedRole === det.id && (
-                        <span className="text-[8px] bg-[#b89255]/20 text-[#b89255] px-1 py-0.5 rounded font-mono uppercase font-bold border border-[#b89255]/30">
-                          Player
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[9px] text-[#94a3b8] leading-relaxed line-clamp-2">
-                      {det.personality}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Begin Case Button / Loading Progress Bar */}
+            {/* Content area: loader OR modes OR character selection */}
             <div className="pt-2">
               {isSyncing ? (
                 (() => {
@@ -399,22 +409,121 @@ export default function Home() {
                     </div>
                   );
                 })()
+              ) : setupStep === "modes" ? (
+                <div className="space-y-6">
+                  <h3 className="text-xs font-mono font-bold text-[#b89255] uppercase tracking-wider">
+                    Select Game Mode
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+                    {/* Spectator card */}
+                    <motion.div
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={handleSelectSpectator}
+                      className="cursor-pointer glass-panel p-6 rounded-2xl border border-white/5 hover:border-[#b89255] bg-gradient-to-b from-[#111827]/80 to-black/90 shadow-lg hover:shadow-[0_0_20px_rgba(184,146,85,0.15)] transition-all duration-300 text-left flex flex-col justify-between min-h-[160px] relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 p-4 text-3xl opacity-10">👁️</div>
+                      <div className="space-y-3">
+                        <h4 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+                          <span className="text-[#b89255]">👁️</span> Spectator Mode
+                        </h4>
+                        <p className="text-xs text-[#94a3b8] leading-relaxed">
+                          Sit back and observe. Five elite AI detectives search the manor, share RSA-encrypted clues, and compete on-chain in real-time.
+                        </p>
+                      </div>
+                      <div className="text-[10px] font-mono text-[#b89255] font-bold mt-4 flex items-center gap-1 group">
+                        <span>Launch AI Simulation</span>
+                        <span className="transform translate-x-0 group-hover:translate-x-1 transition-transform">→</span>
+                      </div>
+                    </motion.div>
+
+                    {/* Single Player card */}
+                    <motion.div
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={handleSelectSinglePlayerMode}
+                      className="cursor-pointer glass-panel p-6 rounded-2xl border border-white/5 hover:border-[#b89255] bg-gradient-to-b from-[#111827]/80 to-black/90 shadow-lg hover:shadow-[0_0_20px_rgba(184,146,85,0.15)] transition-all duration-300 text-left flex flex-col justify-between min-h-[160px] relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 p-4 text-3xl opacity-10">🕵️</div>
+                      <div className="space-y-3">
+                        <h4 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+                          <span className="text-[#b89255]">🕵️</span> Single Player Mode
+                        </h4>
+                        <p className="text-xs text-[#94a3b8] leading-relaxed">
+                          Take active control of a detective. Explore rooms, keep a secret checklist, make suggestions, and deduce the solution to win.
+                        </p>
+                      </div>
+                      <div className="text-[10px] font-mono text-[#b89255] font-bold mt-4 flex items-center gap-1 group">
+                        <span>Choose Character & Play</span>
+                        <span className="transform translate-x-0 group-hover:translate-x-1 transition-transform">→</span>
+                      </div>
+                    </motion.div>
+                  </div>
+                </div>
               ) : (
-                <>
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => initGame(selectedRole === "spectator" ? null : selectedRole)}
-                    className="px-8 py-4 rounded-xl font-bold font-mono text-xs tracking-widest uppercase bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-[#0f0a05] border border-[#d4aa6a]/40 shadow-xl shadow-black/50 hover:shadow-[#b89255]/25 transition-all cursor-pointer active:scale-95"
-                  >
-                    Begin Investigation
-                  </motion.button>
-                  <p className="text-[10px] text-[#64748b] font-mono mt-3">
-                    {selectedRole === "spectator"
-                      ? "*The game will play automatically until the case is solved or all detectives are eliminated."
-                      : "*You will control your detective and make moves, suggest clues, and disprove cards yourself."}
-                  </p>
-                </>
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center max-w-3xl mx-auto px-1">
+                    <button
+                      onClick={() => setSetupStep("modes")}
+                      className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-white font-mono font-bold transition-colors cursor-pointer bg-white/[0.03] border border-white/5 px-3 py-1.5 rounded-lg"
+                    >
+                      ← Back to Modes
+                    </button>
+                    <h3 className="text-xs font-mono font-bold text-[#b89255] uppercase tracking-wider">
+                      Select Your Detective
+                    </h3>
+                    <div className="w-24 hidden sm:block" />
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 max-w-3xl mx-auto">
+                    {DETECTIVES.map((det) => (
+                      <motion.div
+                        key={det.id}
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setSelectedRole(det.id)}
+                        className={`cursor-pointer glass-panel p-3 rounded-xl border transition-all duration-300 text-left flex flex-col justify-between h-28 relative ${
+                          selectedRole === det.id
+                            ? "border-[#b89255] bg-[#b89255]/5 shadow-[0_0_15px_rgba(184,146,85,0.2)]"
+                            : "border-white/5 hover:border-white/10 bg-white/[0.01]"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: det.color }}
+                            />
+                            <span className="text-[11px] font-bold text-white tracking-wide truncate">
+                              {det.name}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[9px] text-[#94a3b8] leading-relaxed line-clamp-3">
+                          {det.personality}
+                        </p>
+                        {selectedRole === det.id && (
+                          <div className="absolute bottom-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-[#b89255]" />
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <div className="pt-4 flex flex-col items-center">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={handleBeginGame}
+                      className="px-8 py-4 rounded-xl font-bold font-mono text-xs tracking-widest uppercase bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-[#0f0a05] border border-[#d4aa6a]/40 shadow-xl shadow-black/50 hover:shadow-[#b89255]/25 transition-all cursor-pointer active:scale-95"
+                    >
+                      Play as {selectedRole !== "spectator" ? DETECTIVE_BY_ID[selectedRole]?.name : ""}
+                    </motion.button>
+                    <p className="text-[10px] text-[#64748b] font-mono mt-3">
+                      *You will control {selectedRole !== "spectator" ? DETECTIVE_BY_ID[selectedRole]?.name : ""}, make moves, suggest clues, and disprove cards yourself.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -576,16 +685,34 @@ export default function Home() {
                             key={card.id}
                             disabled={isSyncing}
                             onClick={() => resolveHumanDisproval(card)}
-                            className="bg-[#0f172a] hover:bg-[#1e293b] border border-white/5 hover:border-[#b89255] rounded-xl p-3 text-left w-28 h-36 flex flex-col justify-between cursor-pointer transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                            className="border border-white/5 hover:border-[#b89255] rounded-xl p-3 text-left w-28 h-36 flex flex-col justify-between cursor-pointer transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none relative overflow-hidden bg-gradient-to-b from-slate-900 to-black shadow-lg"
                           >
-                            <div className="flex justify-between items-center w-full">
-                              <span className="text-[7px] font-mono text-gray-400 font-bold uppercase">{details.type}</span>
+                            {/* Card background artwork overlay */}
+                            <div
+                              className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-85"
+                              style={{
+                                backgroundImage: `url(${
+                                  details.type === "SUSPECT"
+                                    ? "/suspect_card_bg.png"
+                                    : details.type === "WEAPON"
+                                    ? "/weapon_card_bg.png"
+                                    : "/room_card_bg.png"
+                                })`
+                              }}
+                            />
+                            {/* Dark gradient for text readability */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/25 pointer-events-none z-10" />
+
+                            <div className={`flex justify-between items-center w-full z-20 text-[7px] font-mono font-bold uppercase tracking-wider ${
+                              details.type === "SUSPECT" ? "text-[#a78bfa]" : details.type === "WEAPON" ? "text-[#f59e0b]" : "text-[#06b6d4]"
+                            }`}>
+                              <span>{details.type}</span>
                               <span className="text-[10px]">{details.icon}</span>
                             </div>
-                            <div className="text-[16px] text-center w-full my-1">
+                            <div className="text-[16px] text-center w-full my-1 opacity-20 z-20">
                               {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
                             </div>
-                            <div className="text-[8px] font-mono font-black text-white uppercase text-center tracking-wider leading-tight line-clamp-2 pt-1 border-t border-white/5">
+                            <div className="text-[8.5px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
                               {card.name.replace(/_/g, " ")}
                             </div>
                           </button>
@@ -604,11 +731,19 @@ export default function Home() {
                       
                       {/* Accusation Button */}
                       <button
+                        disabled={!activeDetective?.currentRoom}
                         onClick={() => {
-                          setAccusationRoom(activeDetective?.currentRoom || "GRAND_FOYER");
-                          setShowAccusationModal(true);
+                          if (activeDetective?.currentRoom) {
+                            setAccusationRoom(activeDetective.currentRoom);
+                            setShowAccusationModal(true);
+                          }
                         }}
-                        className="px-3 py-1 bg-red-950/45 hover:bg-red-900/45 text-red-400 border border-red-900/40 rounded-lg text-[9px] font-bold font-mono tracking-wider uppercase transition-all hover:border-red-500/50 cursor-pointer active:scale-95"
+                        className={`px-3 py-1 text-[9px] font-bold font-mono tracking-wider uppercase transition-all rounded-lg border ${
+                          activeDetective?.currentRoom
+                            ? "bg-red-950/45 hover:bg-red-900/45 text-red-400 border-red-900/40 hover:border-red-500/50 cursor-pointer active:scale-95 animate-pulse"
+                            : "bg-gray-950/40 text-gray-600 border-gray-900 cursor-not-allowed opacity-50"
+                        }`}
+                        title={activeDetective?.currentRoom ? "File an accusation" : "You must be inside a room to make an accusation"}
                       >
                         🚨 Accuse
                       </button>
@@ -724,13 +859,11 @@ export default function Home() {
           <div className="glass-panel shadow-xl flex flex-col h-[700px] xl:h-[780px] overflow-hidden">
             {/* Panel Tabs Header */}
             <div className="flex border-b border-white/5 bg-black/10 rounded-t-2xl">
-              {(["feed", "suspicion", "detectives"] as const).map((tab) => {
+              {(["feed", "detectives"] as const).map((tab) => {
                 const getTabDetails = (t: typeof tab) => {
                   switch (t) {
                     case "feed":
                       return { label: "Events", icon: Activity };
-                    case "suspicion":
-                      return { label: "Confidence", icon: HelpCircle };
                     case "detectives":
                       return { label: "Dossiers", icon: Users };
                   }
@@ -758,15 +891,6 @@ export default function Home() {
             {/* Panel body container */}
             <div className="flex-1 overflow-hidden">
               {activePanel === "feed" && <ActivityFeed log={log} />}
-              {activePanel === "suspicion" && (
-                <SuspicionMeter
-                  confidence={confidence}
-                  activeDetectiveId={activeDetectiveId}
-                  eliminatedIds={detectives.filter((d) => d.eliminated).map((d) => d.id)}
-                  detectives={detectives}
-                  notebooks={notebooks}
-                />
-              )}
               {activePanel === "detectives" && (
                 <div className="overflow-y-auto h-full p-4 space-y-4">
                   {detectives.map((det) => (
@@ -776,6 +900,7 @@ export default function Home() {
                       isActive={det.id === activeDetectiveId}
                       notebook={notebooks[det.id]}
                       confidence={confidence[det.id] ?? 0}
+                      humanDetectiveId={humanDetectiveId}
                     />
                   ))}
                 </div>
@@ -784,6 +909,203 @@ export default function Home() {
           </div>
         </section>
         </div>
+
+        {/* Full-width Detective Desk (only visible in single-player mode when human playing) */}
+        {status === "playing" && humanDetectiveId && (
+          <section className="w-full mt-8 glass-panel p-6 border border-[#b89255]/40 shadow-2xl relative overflow-hidden text-left bg-black/35 backdrop-blur-md rounded-2xl">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#b89255] to-transparent animate-pulse" />
+            
+            <div className="flex flex-col lg:flex-row gap-8">
+              {/* Left Side: Your Secret Hand */}
+              <div className="lg:w-1/3 space-y-4">
+                <h3 className="text-sm font-mono font-bold text-[#b89255] uppercase tracking-wider flex items-center gap-2">
+                  <span>🎴</span> Your Secret Clue Cards
+                </h3>
+                <p className="text-[10px] text-[#cbd5e1] leading-relaxed">
+                  These are the cards dealt to you from the Enigma deck. Keep them safe. They are automatically crossed off in your manual notebook.
+                </p>
+                
+                <div className="flex flex-wrap gap-3 pt-2">
+                  {(() => {
+                    const humanDet = detectives.find((d) => d.id === humanDetectiveId);
+                    if (!humanDet) return <p className="text-xs text-gray-500 italic">No cards dealt</p>;
+                    return humanDet.cards.map((card) => {
+                      const details = getCardDetails(card.id);
+                      return (
+                        <motion.div
+                          key={card.id}
+                          whileHover={{ y: -4, scale: 1.05 }}
+                          className="w-20 h-32 rounded-xl border relative flex flex-col justify-between p-2 shadow-xl bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0"
+                          style={{ borderColor: details.icon === "👤" ? "rgba(167,139,250,0.3)" : details.icon === "🗡️" ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)" }}
+                        >
+                          {/* Card background artwork overlay */}
+                          <div
+                            className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-85"
+                            style={{
+                              backgroundImage: `url(${
+                                details.type === "SUSPECT"
+                                  ? "/suspect_card_bg.png"
+                                  : details.type === "WEAPON"
+                                  ? "/weapon_card_bg.png"
+                                  : "/room_card_bg.png"
+                              })`
+                            }}
+                          />
+                          {/* Dark linear gradient overlay for text readability */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/25 pointer-events-none z-10" />
+
+                          {/* Top banner / icon */}
+                          <div className={`flex items-center justify-between text-[8px] font-mono font-bold uppercase tracking-wider z-20 ${
+                            details.type === "SUSPECT" ? "text-[#a78bfa]" : details.type === "WEAPON" ? "text-[#f59e0b]" : "text-[#06b6d4]"
+                          }`}>
+                            <span>{details.type}</span>
+                            <span>{details.icon}</span>
+                          </div>
+                          
+                          {/* Middle card artwork placeholder slot */}
+                          <div className="flex-1 flex items-center justify-center text-2xl my-0.5 opacity-20 z-20">
+                            {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
+                          </div>
+                          
+                          {/* Card name */}
+                          <div className="text-[8px] sm:text-[8.5px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
+                            {card.name.replace(/_/g, " ")}
+                          </div>
+                        </motion.div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {/* Right Side: Manual Deduction Checklist */}
+              <div className="flex-1 space-y-4">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <h3 className="text-sm font-mono font-bold text-[#b89255] uppercase tracking-wider flex items-center gap-2">
+                    <span>📝</span> Your Case Notebook Checklist
+                  </h3>
+                  <div className="flex items-center gap-4 text-[9px] font-mono text-[#cbd5e1]/70">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-800/50 border border-white/10" /> Possible Clue</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-950/20 border border-red-500/20" /> Crossed-out (Eliminated)</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-950/20 border border-amber-500/20" /> Under Review</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono text-xs">
+                  {/* Suspects Column */}
+                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                    <div className="font-bold text-[#a78bfa] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                      <span>Suspects</span>
+                      <span className="text-[8px] text-gray-500">5 Cards</span>
+                    </div>
+                    
+                    {DETECTIVES.map((d) => {
+                      const status = manualNotebook[d.id] || "POSSIBLE";
+                      return (
+                        <div
+                          key={d.id}
+                          onClick={() => toggleManualCard(d.id)}
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                            status === "ELIMINATED"
+                              ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
+                              : status === "REVIEW"
+                              ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
+                              : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
+                          }`}
+                        >
+                          <span className="truncate max-w-[120px]">{d.name}</span>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
+                            status === "ELIMINATED"
+                              ? "bg-red-500/10 border-red-500/20 text-red-400"
+                              : status === "REVIEW"
+                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                              : "bg-slate-500/5 border-slate-500/20 text-slate-400"
+                          }`}>
+                            {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Weapons Column */}
+                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                    <div className="font-bold text-[#f59e0b] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                      <span>Weapons</span>
+                      <span className="text-[8px] text-gray-500">6 Cards</span>
+                    </div>
+                    
+                    {WEAPONS.map((w) => {
+                      const status = manualNotebook[w.id] || "POSSIBLE";
+                      return (
+                        <div
+                          key={w.id}
+                          onClick={() => toggleManualCard(w.id)}
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                            status === "ELIMINATED"
+                              ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
+                              : status === "REVIEW"
+                              ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
+                              : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
+                          }`}
+                        >
+                          <span className="truncate max-w-[120px]">{w.name}</span>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
+                            status === "ELIMINATED"
+                              ? "bg-red-500/10 border-red-500/20 text-red-400"
+                              : status === "REVIEW"
+                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                              : "bg-slate-500/5 border-slate-500/20 text-slate-400"
+                          }`}>
+                            {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Rooms Column */}
+                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                    <div className="font-bold text-[#06b6d4] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                      <span>Rooms</span>
+                      <span className="text-[8px] text-gray-500">9 Rooms</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-2 max-h-[260px] overflow-y-auto pr-1 scrollbar-thin">
+                      {ROOMS.map((r) => {
+                        const status = manualNotebook[r.id] || "POSSIBLE";
+                        return (
+                          <div
+                            key={r.id}
+                            onClick={() => toggleManualCard(r.id)}
+                            className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                              status === "ELIMINATED"
+                                ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
+                                : status === "REVIEW"
+                                ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
+                                : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
+                            }`}
+                          >
+                            <span className="truncate max-w-[120px]">{r.name.replace(/_/g, " ")}</span>
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
+                              status === "ELIMINATED"
+                                ? "bg-red-500/10 border-red-500/20 text-red-400"
+                                : status === "REVIEW"
+                                ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                : "bg-slate-500/5 border-slate-500/20 text-slate-400"
+                            }`}>
+                              {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </main>
 
       {/* Winner Reveal Modal Overlay */}
@@ -857,7 +1179,8 @@ export default function Home() {
                   <button
                     onClick={() => {
                       setShowWinnerReveal(false);
-                      initGame();
+                      useGameStore.setState({ status: "initializing" });
+                      setSetupStep("modes");
                     }}
                     className="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-black font-semibold text-xs text-center border border-white/10 shadow-lg shadow-[#b89255]/20 active:scale-[0.98] transition-all"
                   >
@@ -938,17 +1261,10 @@ export default function Home() {
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider">Accuse Room Location</label>
-                  <select
-                    value={accusationRoom}
-                    onChange={(e) => setAccusationRoom(e.target.value as RoomId)}
-                    className="bg-[#0f172a] border border-white/10 rounded-lg p-2 text-xs font-semibold text-white focus:border-[#b89255] outline-none cursor-pointer"
-                  >
-                    {ROOMS.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="bg-[#0f172a]/60 border border-white/5 rounded-lg p-2.5 text-xs font-semibold text-gray-300 font-mono flex items-center justify-between">
+                    <span>{activeDetective?.currentRoom ? activeDetective.currentRoom.replace(/_/g, " ") : "N/A"}</span>
+                    <span className="text-[8px] bg-red-950/40 text-red-400 border border-red-900/30 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider font-mono">Locked to Current Room</span>
+                  </div>
                 </div>
 
                 {/* Buttons */}
