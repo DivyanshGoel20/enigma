@@ -19,12 +19,35 @@ import { Trophy, Activity, Users, HelpCircle, AlertTriangle } from "lucide-react
 const getCardDetails = (id: string) => {
   const cleanId = id.toUpperCase();
   if (DETECTIVE_BY_ID[cleanId]) {
-    return { type: "SUSPECT", icon: "👤", color: "text-[#a78bfa] border-[#a78bfa]/20" };
+    return {
+      type: "SUSPECT",
+      icon: "👤",
+      color: "text-[#a78bfa] border-[#a78bfa]/20",
+      image: `/detective_${cleanId.toLowerCase()}.png`
+    };
   }
   if (WEAPON_BY_ID[cleanId]) {
-    return { type: "WEAPON", icon: "🗡️", color: "text-[#f59e0b] border-[#f59e0b]/20" };
+    let suffix = cleanId.toLowerCase();
+    if (suffix.includes("pistol")) suffix = "pistol";
+    else if (suffix.includes("opener")) suffix = "opener";
+    else if (suffix.includes("strychnine")) suffix = "strychnine";
+    else if (suffix.includes("clock")) suffix = "clock";
+    else if (suffix.includes("tie")) suffix = "tie";
+    else if (suffix.includes("cane")) suffix = "cane";
+
+    return {
+      type: "WEAPON",
+      icon: "🗡️",
+      color: "text-[#f59e0b] border-[#f59e0b]/20",
+      image: `/weapon_${suffix}.png`
+    };
   }
-  return { type: "ROOM", icon: "🚪", color: "text-[#06b6d4] border-[#06b6d4]/20" };
+  return {
+    type: "ROOM",
+    icon: "🚪",
+    color: "text-[#06b6d4] border-[#06b6d4]/20",
+    image: "/room_card_bg.png"
+  };
 };
 
 export default function Home() {
@@ -312,7 +335,7 @@ export default function Home() {
 
   if (status === "initializing") {
     return (
-      <div className="flex flex-col min-h-screen bg-[#080b14] text-[#f1f5f9] font-sans selection:bg-[#b89255] selection:text-black">
+      <div className="flex flex-col min-h-screen text-[#f1f5f9] font-sans selection:bg-[#b89255] selection:text-black">
         <Header />
         <main className="flex-1 flex items-center justify-center p-6 max-w-4xl mx-auto">
           <div className="glass-panel p-8 shadow-2xl w-full text-center space-y-8 relative overflow-hidden border border-white/5">
@@ -530,7 +553,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#080b14] text-[#f1f5f9] font-sans selection:bg-[#b89255] selection:text-black">
+    <div className="flex flex-col min-h-screen text-[#f1f5f9] font-sans selection:bg-[#b89255] selection:text-black">
       {/* Header bar */}
       <Header />
 
@@ -853,7 +876,7 @@ export default function Home() {
 
         {/* Right Column: Spectator Panels (50% Split) */}
         <section className="lg:col-span-1 flex flex-col gap-6 h-full">
-          <div className="glass-panel shadow-xl flex flex-col h-[700px] xl:h-[780px] overflow-hidden">
+          <div className="glass-panel flicker-glow shadow-xl flex flex-col h-[700px] xl:h-[780px] overflow-hidden">
             {/* Panel Tabs Header */}
             <div className="flex border-b border-white/5 bg-black/10 rounded-t-2xl">
               {(humanDetectiveId === null ? (["feed", "suspicion", "detectives"] as const) : (["feed", "detectives"] as const)).map((tab) => {
@@ -943,24 +966,16 @@ export default function Home() {
                         <motion.div
                           key={card.id}
                           whileHover={{ y: -4, scale: 1.05 }}
-                          className="w-24 h-36 rounded-xl border relative flex flex-col justify-between p-2.5 shadow-xl bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0"
-                          style={{ borderColor: details.icon === "👤" ? "rgba(167,139,250,0.3)" : details.icon === "🗡️" ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)" }}
+                          className="w-24 h-36 rounded-xl border relative flex flex-col justify-between p-2.5 shadow-xl bg-slate-950 overflow-hidden shrink-0 group"
+                          style={{ borderColor: details.type === "SUSPECT" ? "rgba(167,139,250,0.35)" : details.type === "WEAPON" ? "rgba(245,158,11,0.35)" : "rgba(6,182,212,0.35)" }}
                         >
-                          {/* Card background artwork overlay */}
+                          {/* Fullscreen Card Artwork */}
                           <div
-                            className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-85"
-                            style={{
-                              backgroundImage: `url(${
-                                details.type === "SUSPECT"
-                                  ? "/suspect_card_bg.png"
-                                  : details.type === "WEAPON"
-                                  ? "/weapon_card_bg.png"
-                                  : "/room_card_bg.png"
-                              })`
-                            }}
+                            className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-85 transition-transform duration-300 group-hover:scale-110"
+                            style={{ backgroundImage: `url(${details.image})` }}
                           />
-                          {/* Dark linear gradient overlay for text readability */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/25 pointer-events-none z-10" />
+                          {/* Dark gradient overlay for top and bottom text readability */}
+                          <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 pointer-events-none z-10" />
 
                           {/* Top banner / icon */}
                           <div className={`flex items-center justify-between text-[9px] font-mono font-bold uppercase tracking-wider z-20 ${
@@ -970,10 +985,8 @@ export default function Home() {
                             <span>{details.icon}</span>
                           </div>
                           
-                          {/* Middle card artwork placeholder slot */}
-                          <div className="flex-1 flex items-center justify-center text-3xl my-0.5 opacity-20 z-20">
-                            {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
-                          </div>
+                          {/* Empty middle spacer */}
+                          <div className="flex-1" />
                           
                           {/* Card name */}
                           <div className="text-[10px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
