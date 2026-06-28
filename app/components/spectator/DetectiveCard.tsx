@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DetectiveState, DeductionNotebook, DetectiveId, WeaponId, RoomId } from "@/lib/game/types";
 import { DETECTIVE_BY_ID, WEAPON_BY_ID } from "@/lib/game/constants";
+import { ConspiracyWeb } from "./ConspiracyWeb";
 
 const getCardDetails = (id: string) => {
   const cleanId = id.toUpperCase();
@@ -259,14 +260,14 @@ export function DetectiveCard({
               </div>
             </div>
 
-            {/* Notebook Checklist */}
-            {notebook && (
+            {/* Notebook Checklist (Preserved/Commented Out as requested) */}
+            {/*
+            notebook && (
               <div>
                 <h5 className="font-bold text-[#b89255] uppercase tracking-wider mb-2 font-mono text-[9px] flex items-center gap-1.5">
                   <span>📝</span> Deduction Checklist
                 </h5>
                 <div className="grid grid-cols-3 gap-2 font-mono">
-                  {/* Suspects */}
                   <div className="space-y-1 bg-black/35 p-2 rounded-xl border border-white/[0.03]">
                     <div className="font-bold text-[#a78bfa] border-b border-white/5 pb-1 mb-1.5 uppercase text-[8px] tracking-wider">Suspects</div>
                     {Object.keys(notebook.suspects).map((id) => {
@@ -292,7 +293,6 @@ export function DetectiveCard({
                     })}
                   </div>
 
-                  {/* Weapons */}
                   <div className="space-y-1 bg-black/35 p-2 rounded-xl border border-white/[0.03]">
                     <div className="font-bold text-[#f59e0b] border-b border-white/5 pb-1 mb-1.5 uppercase text-[8px] tracking-wider">Weapons</div>
                     {Object.keys(notebook.weapons).map((id) => {
@@ -318,7 +318,6 @@ export function DetectiveCard({
                     })}
                   </div>
 
-                  {/* Rooms */}
                   <div className="space-y-1 bg-black/35 p-2 rounded-xl border border-white/[0.03]">
                     <div className="font-bold text-[#06b6d4] border-b border-white/5 pb-1 mb-1.5 uppercase text-[8px] tracking-wider">Rooms</div>
                     {Object.keys(notebook.rooms).map((id) => {
@@ -345,6 +344,12 @@ export function DetectiveCard({
                   </div>
                 </div>
               </div>
+            )
+            */}
+
+            {/* Live Conspiracy Web Graph */}
+            {notebook && (
+              <ConspiracyWeb detective={detective} notebook={notebook} />
             )}
           </motion.div>
         )}
