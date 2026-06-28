@@ -10,7 +10,7 @@ import { ActivityFeed } from "./components/spectator/ActivityFeed";
 import { SuspicionMeter } from "./components/spectator/SuspicionMeter";
 import { DetectiveCard } from "./components/spectator/DetectiveCard";
 import { DETECTIVES, DETECTIVE_BY_ID, WEAPON_BY_ID, WEAPONS, ROOMS } from "@/lib/game/constants";
-import type { DetectiveId, WeaponId, RoomId, Position, Card } from "@/lib/game/types";
+import type { DetectiveId, WeaponId, RoomId, Position, Card, CustomDetectiveConfig } from "@/lib/game/types";
 import { runDeductionAnalysis, checkAIAccusationDecision } from "@/lib/game/deduction";
 import { getReachableCells } from "@/lib/game/board";
 import { motion, AnimatePresence } from "framer-motion";
@@ -108,6 +108,15 @@ export default function Home() {
   const [accusationWeapon, setAccusationWeapon] = useState<WeaponId>("PEARL_PISTOL");
   const [accusationRoom, setAccusationRoom] = useState<RoomId>("GRAND_FOYER");
 
+  // Local state for Custom Detective Creator
+  const [customDetective, setCustomDetective] = useState<CustomDetectiveConfig | null>(null);
+  const [isEditingCustomDetective, setIsEditingCustomDetective] = useState(false);
+  const [customName, setCustomName] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [customTargetId, setCustomTargetId] = useState<DetectiveId>("VANCE");
+  const [isParsingPersona, setIsParsingPersona] = useState(false);
+  const [parsingError, setParsingError] = useState<string | null>(null);
+
   // Local state for manual interactive clue notebook checklist (cycles: POSSIBLE -> ELIMINATED -> REVIEW -> POSSIBLE)
   const [manualNotebook, setManualNotebook] = useState<Record<string, "POSSIBLE" | "ELIMINATED" | "REVIEW" >> (() => {
     if (typeof window !== "undefined") {
@@ -160,7 +169,7 @@ export default function Home() {
     WEAPONS.forEach((w) => { defaultState[w.id] = "POSSIBLE"; });
     ROOMS.forEach((r) => { defaultState[r.id] = "POSSIBLE"; });
     setManualNotebook(defaultState);
-    initGame(selectedRole === "spectator" ? null : selectedRole);
+    initGame(selectedRole === "spectator" ? null : selectedRole, customDetective);
   };
 
   const handleSelectSpectator = () => {
@@ -170,12 +179,55 @@ export default function Home() {
     WEAPONS.forEach((w) => { defaultState[w.id] = "POSSIBLE"; });
     ROOMS.forEach((r) => { defaultState[r.id] = "POSSIBLE"; });
     setManualNotebook(defaultState);
-    initGame(null);
+    initGame(null, customDetective);
   };
 
   const handleSelectSinglePlayerMode = () => {
     setSelectedRole("VANCE");
     setSetupStep("characters");
+  };
+
+  const handleParseCustomDetective = async () => {
+    if (!customPrompt.trim()) {
+      setParsingError("Please enter a description for the detective's strategy and personality.");
+      return;
+    }
+    setIsParsingPersona(true);
+    setParsingError(null);
+    try {
+      const res = await fetch("/api/inference/parse-persona", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: customPrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok || !data.decision) {
+        throw new Error(data.error || "Failed to analyze personality. Check network connection.");
+      }
+      
+      const { name, movementStyle, bluffRate, accusationRiskLimit, isOffensive } = data.decision;
+      
+      if (isOffensive) {
+        setParsingError("The custom description prompt was flagged as inappropriate. Please modify your text.");
+        setIsParsingPersona(false);
+        return;
+      }
+      
+      setCustomDetective({
+        targetAgentId: customTargetId,
+        customName: customName.trim() || name,
+        personalityPrompt: customPrompt.trim(),
+        movementStyle,
+        bluffRate,
+        accusationRiskLimit,
+      });
+      setIsEditingCustomDetective(false);
+    } catch (err: any) {
+      console.error("[Parse custom detective failed]", err);
+      setParsingError(err?.message || String(err));
+    } finally {
+      setIsParsingPersona(false);
+    }
   };
 
   const toggleManualCard = (id: string) => {
@@ -480,6 +532,59 @@ export default function Home() {
                       </div>
                     </motion.div>
                   </div>
+
+                  {/* Custom Detective Setup Button */}
+                  <div className="pt-4 flex flex-col items-center">
+                    {customDetective ? (
+                      <div className="flex flex-col items-center bg-[#b89255]/5 border border-[#b89255]/30 px-6 py-3.5 rounded-2xl max-w-md w-full relative">
+                        <div className="text-[10px] font-mono font-bold text-[#b89255] uppercase tracking-wider">
+                          ✨ Custom AI Agent Active
+                        </div>
+                        <div className="text-xs font-bold text-white mt-1">
+                          {customDetective.customName} <span className="text-[10px] text-gray-400 font-normal">replaces {customDetective.targetAgentId}</span>
+                        </div>
+                        <div className="text-[9px] text-gray-400 font-mono mt-1 space-x-2">
+                          <span>Style: {customDetective.movementStyle}</span>
+                          <span>•</span>
+                          <span>Bluff: {Math.round(customDetective.bluffRate * 100)}%</span>
+                          <span>•</span>
+                          <span>Accuse: {Math.round(customDetective.accusationRiskLimit * 100)}%</span>
+                        </div>
+                        <div className="flex gap-4 mt-3">
+                          <button
+                            onClick={() => {
+                              setCustomName(customDetective.customName);
+                              setCustomPrompt(customDetective.personalityPrompt);
+                              setCustomTargetId(customDetective.targetAgentId);
+                              setIsEditingCustomDetective(true);
+                            }}
+                            className="text-[9px] text-[#cbd5e1] hover:text-[#b89255] font-bold font-mono transition-colors uppercase tracking-wider bg-white/[0.03] border border-white/5 px-2.5 py-1 rounded-md"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setCustomDetective(null)}
+                            className="text-[9px] text-red-400 hover:text-red-300 font-bold font-mono transition-colors uppercase tracking-wider bg-red-950/20 border border-red-500/25 px-2.5 py-1 rounded-md"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setCustomName("");
+                          setCustomPrompt("");
+                          setCustomTargetId("VANCE");
+                          setParsingError(null);
+                          setIsEditingCustomDetective(true);
+                        }}
+                        className="px-5 py-2.5 rounded-xl font-bold font-mono text-[10px] tracking-wider uppercase bg-white/[0.03] border border-[#b89255]/20 hover:border-[#b89255]/40 hover:bg-[#b89255]/5 text-[#cbd5e1] hover:text-white transition-all cursor-pointer"
+                      >
+                        ⚙️ Customize AI Detective Opponent
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -548,7 +653,123 @@ export default function Home() {
             </div>
           </div>
         </main>
-      </div>
+        {isEditingCustomDetective && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="glass-panel p-6 max-w-lg w-full relative border border-white/10 shadow-2xl space-y-5 overflow-hidden text-left bg-[#080b14]/95">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#b89255] via-[#e0b571] to-[#b89255]" />
+            
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-extrabold tracking-wider text-[#b89255] serif-title uppercase text-[#b89255]">
+                Custom Detective Dossier
+              </h3>
+              <p className="text-xs text-[#94a3b8] leading-relaxed">
+                Provide custom strategic instructions, tactics, and personality monologues to override one of the AI agents.
+              </p>
+            </div>
+
+            <div className="space-y-4 text-left">
+              {/* Target Dropdown */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-[#b89255] uppercase tracking-wider block">
+                  Select Detective to Override
+                </label>
+                <select
+                  value={customTargetId}
+                  onChange={(e) => setCustomTargetId(e.target.value as DetectiveId)}
+                  className="w-full bg-[#05070a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b89255] transition-all cursor-pointer font-mono"
+                >
+                  {DETECTIVES.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      Replace {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Name field */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-[#b89255] uppercase tracking-wider block">
+                  Detective Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Inspector Poirot (Leave blank to parse from prompt)"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  className="w-full bg-[#05070a] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b89255] transition-all"
+                />
+              </div>
+
+              {/* Prompt textarea */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-[#b89255] uppercase tracking-wider flex justify-between">
+                  <span>Strategy & Personality Prompt</span>
+                  <span className="text-gray-500 font-normal">Max 250 characters</span>
+                </label>
+                <textarea
+                  rows={4}
+                  maxLength={250}
+                  placeholder="Describe strategy (aggressive, methodical, bluffing) and speech persona..."
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  className="w-full bg-[#05070a] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#b89255] transition-all resize-none leading-relaxed"
+                />
+                
+                {/* Templates checklist for quick copy */}
+                <div className="pt-1.5">
+                  <div className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">Quick Suggestions:</div>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <button
+                      onClick={() => setCustomPrompt("An eccentric, orderly detective who refers to himself in the third person. Tactically follows other detectives but is extremely cautious and only accuses at 100% certainty.")}
+                      className="text-[9px] bg-white/[0.02] border border-white/5 hover:border-[#b89255]/40 px-2 py-1 rounded text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      French Poirot
+                    </button>
+                    <button
+                      onClick={() => setCustomPrompt("A chaotic, maniacal wildcard who treats the case as a game. Speaks in cryptical jokes. Tactically, he bluffs constantly and makes risky guesses at 50% certainty.")}
+                      className="text-[9px] bg-white/[0.02] border border-white/5 hover:border-[#b89255]/40 px-2 py-1 rounded text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      Chaotic Joker
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {parsingError && (
+              <div className="bg-red-950/40 border border-red-500/20 text-red-200 text-[11px] p-3 rounded-xl font-mono flex items-center gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                <span>{parsingError}</span>
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-white/5">
+              <button
+                disabled={isParsingPersona}
+                onClick={() => setIsEditingCustomDetective(false)}
+                className="px-4 py-2 border border-white/10 hover:border-white/20 text-xs font-mono font-bold text-[#cbd5e1] hover:text-white rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={isParsingPersona}
+                onClick={handleParseCustomDetective}
+                className="px-5 py-2 bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-[#0f0a05] text-xs font-mono font-bold rounded-lg border border-[#d4aa6a]/40 shadow-md hover:shadow-[#b89255]/15 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                {isParsingPersona ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-[#0f0a05] border-t-transparent rounded-full animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  "Apply Strategy"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
     );
   }
 

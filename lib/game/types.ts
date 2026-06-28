@@ -137,6 +137,15 @@ export interface AIPersonality {
   readonly systemPrompt: string;
 }
 
+export interface CustomDetectiveConfig {
+  readonly targetAgentId: DetectiveId;
+  readonly customName: string;
+  readonly personalityPrompt: string;
+  readonly movementStyle: "METHODICAL" | "AGGRESSIVE" | "INTERROGATOR" | "BLUFFER";
+  readonly bluffRate: number;
+  readonly accusationRiskLimit: number;
+}
+
 // ============================================================
 // EVENT LOG
 // ============================================================

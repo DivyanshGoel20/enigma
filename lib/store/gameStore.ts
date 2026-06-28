@@ -12,6 +12,7 @@ import type {
   LogEntry,
   Suggestion,
   Position,
+  CustomDetectiveConfig,
 } from "@/lib/game/types";
 import {
   DETECTIVES,
@@ -102,10 +103,11 @@ export interface GameState {
     disproverId: DetectiveId;
     candidates: Card[];
   } | null;
+  customDetective: CustomDetectiveConfig | null;
 }
 
 export interface GameActions {
-  initGame: (selectedHumanId?: DetectiveId | null) => Promise<void>;
+  initGame: (selectedHumanId?: DetectiveId | null, customConfig?: CustomDetectiveConfig | null) => Promise<void>;
   rollDiceAction: () => Promise<void>;
   stepMovement: () => void;
   moveHumanAction: (targetPos: Position) => void;
@@ -170,6 +172,7 @@ const INITIAL_STATE: GameState = {
   humanDetectiveId: null,
   sessionPrivateKey: null,
   disprovalPending: null,
+  customDetective: null,
 };
 
 // ============================================================
@@ -259,7 +262,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Init ─────────────────────────────────────────────────
   // ── Init ─────────────────────────────────────────────────
-  initGame: async (selectedHumanId: DetectiveId | null = null) => {
+  initGame: async (selectedHumanId: DetectiveId | null = null, customConfig: CustomDetectiveConfig | null = null) => {
     const gameId = makeId();
     const detectiveIds = ALL_DETECTIVE_IDS;
     const { envelope, hands } = setupDeck(detectiveIds);
@@ -278,9 +281,10 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         DETECTIVES.map(async (d) => {
           const keys = await generateKeyPair();
           privateKeys[d.id] = keys.privateKey;
+          const isCustom = customConfig !== null && customConfig.targetAgentId === d.id;
           return {
             id: d.id,
-            name: d.name,
+            name: isCustom ? customConfig.customName : d.name,
             color: d.color,
             position: { ...STARTING_POSITIONS[d.id] },
             currentRoom: null,
@@ -374,6 +378,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         error: null,
         humanDetectiveId: selectedHumanId,
         sessionPrivateKey: sessionKeys.privateKey,
+        customDetective: customConfig,
       });
     } catch (err: any) {
       console.error("[0G Init] Initial setup failed:", err);
@@ -391,7 +396,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Dice ─────────────────────────────────────────────────
   rollDiceAction: async () => {
-    const { actionState, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId, notebooks } = get();
+    const { actionState, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId, notebooks, customDetective } = get();
     if (actionState !== "idle") return;
 
     set({
@@ -461,7 +466,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       let decisionReasoning = "";
 
       const notebook = notebooks[activeId];
-      if (activeId === "VANCE" && notebook) {
+      let style: "VANCE" | "ROSEWOOD" | "BLACKWOOD" | "STERLING" | "ASHCROFT" = activeId;
+      if (customDetective && customDetective.targetAgentId === activeId) {
+        if (customDetective.movementStyle === "METHODICAL") style = "VANCE";
+        else if (customDetective.movementStyle === "AGGRESSIVE") style = "ROSEWOOD";
+        else if (customDetective.movementStyle === "INTERROGATOR") style = "STERLING";
+        else if (customDetective.movementStyle === "BLUFFER") style = "ASHCROFT";
+      }
+
+      if (style === "VANCE" && notebook) {
         // Vance (Cautious Analyst): Methodically targets rooms that are still POSSIBLE in his notebook.
         const unruledOutCandidates = candidatePaths.filter(
           (c) => notebook.rooms[c.roomId] === "POSSIBLE"
@@ -475,7 +488,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           chosenPathInfo = candidatePaths[0];
           decisionReasoning = `has visited all candidate rooms. Targetting closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} as fallback.`;
         }
-      } else if (activeId === "BLACKWOOD" && notebook) {
+      } else if (style === "BLACKWOOD" && notebook) {
         // Blackwood (Probabilistic Reasoner): Calculates a score for each room: (unruled suspects + unruled weapons + room weight) / distance.
         const scoredCandidates = candidatePaths.map((c) => {
           const possibleSuspectsCount = (Object.keys(notebook.suspects) as DetectiveId[]).filter(
@@ -499,9 +512,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           chosenPathInfo = candidatePaths[0];
           decisionReasoning = `targets closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to maintain efficiency.`;
         }
-      } else if (activeId === "STERLING") {
+      } else if (style === "STERLING") {
         // Sterling (Blunt Interrogator): Target rooms containing other active detectives, to interrogate them.
-        const detectivesInRooms = detectives.filter((d) => d.id !== "STERLING" && d.currentRoom && !d.eliminated);
+        const detectivesInRooms = detectives.filter((d) => d.id !== activeId && d.currentRoom && !d.eliminated);
         const roomToDetCount: Record<string, number> = {};
         detectivesInRooms.forEach((d) => {
           if (d.currentRoom) {
@@ -530,7 +543,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           chosenPathInfo = candidatePaths[0];
           decisionReasoning = `targets closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} as fallback.`;
         }
-      } else if (activeId === "ASHCROFT" && notebook) {
+      } else if (style === "ASHCROFT" && notebook) {
         // Ashcroft (Cunning Deceiver): 40% chance to target an already ruled-out room as a bluff to confuse opponents.
         const ruledOutRooms = candidatePaths.filter(
           (c) => notebook.rooms[c.roomId] !== "POSSIBLE"
@@ -737,7 +750,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── AI Suggestion ───────────────────────────────────────────
   makeSuggestion: async () => {
-    const { currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId } = get();
+    const { currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId, customDetective } = get();
     const activeId = detectiveOrder[currentDetectiveIndex];
     const detective = detectives.find((d) => d.id === activeId)!;
     const notebook = notebooks[activeId];
@@ -778,9 +791,13 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         (id) => notebook.weapons[id] === "HELD_BY_OTHER" || notebook.weapons[id] === "ELIMINATED"
       );
 
-      if (activeId === "ASHCROFT") {
-        // Ashcroft (Deceiver): 50% chance to bluff by suggesting a card she holds or has eliminated
-        if (Math.random() < 0.5) {
+      const isCustom = customDetective !== null && customDetective.targetAgentId === activeId;
+      const bluffRate = isCustom ? customDetective.bluffRate : (activeId === "ASHCROFT" ? 0.5 : 0);
+      const testOwnHandRate = isCustom ? 0 : (activeId === "ROSEWOOD" ? 0.3 : 0);
+      const summonRival = isCustom ? (customDetective.movementStyle === "INTERROGATOR") : (activeId === "STERLING");
+
+      if (bluffRate > 0) {
+        if (Math.random() < bluffRate) {
           const pool = [...heldSuspects, ...eliminatedSuspects];
           if (pool.length > 0) {
             const bluffSuspect = pool[Math.floor(Math.random() * pool.length)];
@@ -788,27 +805,25 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
             suggestionNotes = "Bluff Strategy: Deliberately suggesting a ruled-out or held suspect to mislead opponents.";
           }
         }
-        if (Math.random() < 0.5) {
+        if (Math.random() < bluffRate) {
           const pool = [...heldWeapons, ...eliminatedWeapons];
           if (pool.length > 0) {
             const bluffWeapon = pool[Math.floor(Math.random() * pool.length)];
             weaponsForSuggestion = [bluffWeapon];
-            suggestionNotes += (suggestionNotes ? " Also " : "") + "Bluff Strategy: Suggesting a ruled-out or held weapon to hide her real lead.";
+            suggestionNotes += (suggestionNotes ? " Also " : "") + "Bluff Strategy: Suggesting a ruled-out or held weapon to hide real leads.";
           }
         }
-      } else if (activeId === "ROSEWOOD") {
-        // Rosewood (Risk-taker): 30% chance to suggest a card she holds in her hand to flush out info
-        if (Math.random() < 0.3 && heldSuspects.length > 0) {
+      } else if (testOwnHandRate > 0) {
+        if (Math.random() < testOwnHandRate && heldSuspects.length > 0) {
           suspectsForSuggestion = [heldSuspects[Math.floor(Math.random() * heldSuspects.length)]];
           suggestionNotes = "Risk Strategy: Testing a suspect in hand to flush out other players' secrets.";
         }
-        if (Math.random() < 0.3 && heldWeapons.length > 0) {
+        if (Math.random() < testOwnHandRate && heldWeapons.length > 0) {
           weaponsForSuggestion = [heldWeapons[Math.floor(Math.random() * heldWeapons.length)]];
           suggestionNotes += (suggestionNotes ? " Also " : "") + "Risk Strategy: Testing a weapon in hand to narrow down possibilities.";
         }
-      } else if (activeId === "STERLING") {
-        // Sterling (Interrogator): Bluntly summons a nearby active detective to interrogate them
-        const activeRivals = detectives.filter((d) => d.id !== "STERLING" && !d.eliminated);
+      } else if (summonRival) {
+        const activeRivals = detectives.filter((d) => d.id !== activeId && !d.eliminated);
         if (activeRivals.length > 0) {
           activeRivals.sort((a, b) => {
             const distA = Math.abs(a.position.x - detective.position.x) + Math.abs(a.position.y - detective.position.y);
@@ -829,6 +844,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           agentId: activeId,
           context: `Candidate Suspects: [${suspectsForSuggestion.join(", ")}]\nCandidate Weapons: [${weaponsForSuggestion.join(", ")}]\nCurrent Room: ${detective.currentRoom}${suggestionNotes ? `\nStrategic Directive: ${suggestionNotes}` : ""}`,
           action: "DECIDE_SUGGESTION",
+          customSystemPrompt: isCustom ? customDetective.personalityPrompt : undefined,
         }),
       });
 
@@ -991,9 +1007,11 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         updatedNotebooks[activeId] = updateNotebookFromReveal(notebooks[activeId], card);
         updatedConfidence[activeId] = calculateConfidence(updatedNotebooks[activeId]);
 
+        const customDetective = get().customDetective;
+        const customAccusationLimit = customDetective && customDetective.targetAgentId === activeId ? customDetective.accusationRiskLimit : undefined;
         const solution = activeId === humanDetectiveId
           ? runDeductionAnalysis(updatedNotebooks[activeId])
-          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round);
+          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round, customAccusationLimit);
 
         set({
           notebooks: updatedNotebooks,
@@ -1046,9 +1064,11 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         updatedNotebooks[activeId] = updateNotebookFromNoDisproval(notebooks[activeId], suggestion);
         updatedConfidence[activeId] = calculateConfidence(updatedNotebooks[activeId]);
 
+        const customDetective = get().customDetective;
+        const customAccusationLimit = customDetective && customDetective.targetAgentId === activeId ? customDetective.accusationRiskLimit : undefined;
         const solution = activeId === humanDetectiveId
           ? runDeductionAnalysis(updatedNotebooks[activeId])
-          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round);
+          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round, customAccusationLimit);
 
         set({
           notebooks: updatedNotebooks,
@@ -1348,7 +1368,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       updatedNotebooks[suggesterId] = updateNotebookFromReveal(notebooks[suggesterId], selectedCard);
       updatedConfidence[suggesterId] = calculateConfidence(updatedNotebooks[suggesterId]);
 
-      const solution = checkAIAccusationDecision(suggesterId, updatedNotebooks[suggesterId], round);
+      const customDetective = get().customDetective;
+      const customAccusationLimit = customDetective && customDetective.targetAgentId === suggesterId ? customDetective.accusationRiskLimit : undefined;
+      const solution = checkAIAccusationDecision(suggesterId, updatedNotebooks[suggesterId], round, customAccusationLimit);
 
       set({
         notebooks: updatedNotebooks,
@@ -1504,13 +1526,19 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── AI Thought Monologues (0G Compute) ───────────────────
   fetchAIMonologue: async (agentId, context, action) => {
-    // Left as compatibility stub — main simulation loop uses unified suggestion response instead to save calls
+    const { customDetective } = get();
+    const isCustom = customDetective !== null && customDetective.targetAgentId === agentId;
     set({ isThinking: true, activeMonologue: null });
     try {
       const res = await fetch("/api/inference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, context, action }),
+        body: JSON.stringify({
+          agentId,
+          context,
+          action,
+          customSystemPrompt: isCustom ? customDetective.personalityPrompt : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {

@@ -148,7 +148,8 @@ export function calculateConfidence(notebook: DeductionNotebook): number {
 export function checkAIAccusationDecision(
   agentId: DetectiveId,
   notebook: DeductionNotebook,
-  round: number
+  round: number,
+  customAccusationRiskLimit?: number
 ): { suspect: DetectiveId; weapon: WeaponId; room: RoomId } | null {
   const inPlaySuspects = DETECTIVES.filter((d) => notebook.suspects[d.id] === "POSSIBLE");
   const inPlayWeapons  = WEAPONS.filter((w)  => notebook.weapons[w.id]  === "POSSIBLE");
@@ -165,6 +166,24 @@ export function checkAIAccusationDecision(
       weapon:  inPlayWeapons[0].id,
       room:    inPlayRooms[0].id,
     };
+  }
+
+  // Custom risk evaluation (e.g. 50% risk threshold)
+  if (typeof customAccusationRiskLimit === "number") {
+    const totalCombos = inPlaySuspects.length * inPlayWeapons.length * inPlayRooms.length;
+    if (totalCombos > 0) {
+      const confidence = 1 / totalCombos;
+      if (confidence >= customAccusationRiskLimit) {
+        const chosenSuspect = inPlaySuspects[Math.floor(Math.random() * inPlaySuspects.length)].id;
+        const chosenWeapon = inPlayWeapons[Math.floor(Math.random() * inPlayWeapons.length)].id;
+        const chosenRoom = inPlayRooms[Math.floor(Math.random() * inPlayRooms.length)].id;
+        return {
+          suspect: chosenSuspect,
+          weapon: chosenWeapon,
+          room: chosenRoom,
+        };
+      }
+    }
   }
 
   // Madam Rosewood: Aggressive risk-taker (Round 3+ and exactly 2 combinations left)
