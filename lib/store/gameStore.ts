@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   DetectiveId,
   WeaponId,
+  RoomId,
   DetectiveState,
   Card,
   Envelope,
@@ -31,6 +32,7 @@ import {
   updateNotebookFromNoDisproval,
   runDeductionAnalysis,
   calculateConfidence,
+  checkAIAccusationDecision,
 } from "@/lib/game/deduction";
 import { findPath, getReachableDoors, walkPath, getRoomAt } from "@/lib/game/board";
 import { getAddressFromPrivateKey } from "@/lib/zeroG/chain";
@@ -348,15 +350,6 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         txSeq: resData.txSeq,
       };
 
-      const envelopeCheatLog: LogEntry = {
-        id: makeId(),
-        timestamp: Date.now() + 10,
-        agentId: "SYSTEM",
-        action: "NO_DISPROVAL",
-        details: `🚨 [CONFIDENTIAL CASE FILE] The solution envelope contains: Suspect - ${DETECTIVE_BY_ID[envelope.suspect]?.name || envelope.suspect}, Weapon - ${envelope.weapon.replace(/_/g, " ")}, Room - ${envelope.room.replace(/_/g, " ")}. Use this to make your accusation!`,
-        isEncrypted: false,
-      };
-
       set({ syncMessage: "Anchoring game setup registry onto the 0G Chain..." });
       await new Promise((resolve) => setTimeout(resolve, 800));
 
@@ -375,7 +368,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         hands,
         notebooks,
         confidence,
-        log: [initLog, uploadLog, envelopeCheatLog],
+        log: [initLog, uploadLog],
         isSyncing: false,
         syncMessage: null,
         error: null,
@@ -398,7 +391,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Dice ─────────────────────────────────────────────────
   rollDiceAction: async () => {
-    const { actionState, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId } = get();
+    const { actionState, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId, notebooks } = get();
     if (actionState !== "idle") return;
 
     set({
@@ -448,14 +441,14 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
       // Compute paths to doors of OTHER rooms, sorting by distance to pick the closest target
       const currentRoomId = detective.currentRoom;
-      const candidatePaths: { roomId: string; door: Position; distance: number; path: Position[] }[] = [];
+      const candidatePaths: { roomId: RoomId; door: Position; distance: number; path: Position[]; score?: number }[] = [];
       for (const room of ROOMS) {
         if (room.id === currentRoomId) continue;
         for (const door of room.doors) {
           const p = findPath(detective.position, door);
           if (p && p.length > 1) {
             candidatePaths.push({
-              roomId: room.id,
+              roomId: room.id as RoomId,
               door,
               distance: p.length - 1,
               path: p,
@@ -464,11 +457,121 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         }
       }
 
-      candidatePaths.sort((a, b) => a.distance - b.distance);
+      let chosenPathInfo: typeof candidatePaths[number] | null = null;
+      let decisionReasoning = "";
+
+      const notebook = notebooks[activeId];
+      if (activeId === "VANCE" && notebook) {
+        // Vance (Cautious Analyst): Methodically targets rooms that are still POSSIBLE in his notebook.
+        const unruledOutCandidates = candidatePaths.filter(
+          (c) => notebook.rooms[c.roomId] === "POSSIBLE"
+        );
+        if (unruledOutCandidates.length > 0) {
+          unruledOutCandidates.sort((a, b) => a.distance - b.distance);
+          chosenPathInfo = unruledOutCandidates[0];
+          decisionReasoning = `methodically targets the unvisited ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to gather new evidence.`;
+        } else {
+          candidatePaths.sort((a, b) => a.distance - b.distance);
+          chosenPathInfo = candidatePaths[0];
+          decisionReasoning = `has visited all candidate rooms. Targetting closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} as fallback.`;
+        }
+      } else if (activeId === "BLACKWOOD" && notebook) {
+        // Blackwood (Probabilistic Reasoner): Calculates a score for each room: (unruled suspects + unruled weapons + room weight) / distance.
+        const scoredCandidates = candidatePaths.map((c) => {
+          const possibleSuspectsCount = (Object.keys(notebook.suspects) as DetectiveId[]).filter(
+            (id) => notebook.suspects[id] === "POSSIBLE"
+          ).length;
+          const possibleWeaponsCount = (Object.keys(notebook.weapons) as WeaponId[]).filter(
+            (id) => notebook.weapons[id] === "POSSIBLE"
+          ).length;
+          const roomStatus = notebook.rooms[c.roomId];
+          const roomWeight = roomStatus === "POSSIBLE" ? 3 : 1;
+          const score = (possibleSuspectsCount + possibleWeaponsCount + roomWeight) / (c.distance || 1);
+          return { ...c, score };
+        });
+
+        if (scoredCandidates.length > 0) {
+          scoredCandidates.sort((a, b) => b.score - a.score);
+          chosenPathInfo = scoredCandidates[0];
+          decisionReasoning = `calculates high information gain for ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} (probability density score: ${(chosenPathInfo.score ?? 0).toFixed(1)}).`;
+        } else {
+          candidatePaths.sort((a, b) => a.distance - b.distance);
+          chosenPathInfo = candidatePaths[0];
+          decisionReasoning = `targets closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to maintain efficiency.`;
+        }
+      } else if (activeId === "STERLING") {
+        // Sterling (Blunt Interrogator): Target rooms containing other active detectives, to interrogate them.
+        const detectivesInRooms = detectives.filter((d) => d.id !== "STERLING" && d.currentRoom && !d.eliminated);
+        const roomToDetCount: Record<string, number> = {};
+        detectivesInRooms.forEach((d) => {
+          if (d.currentRoom) {
+            roomToDetCount[d.currentRoom] = (roomToDetCount[d.currentRoom] || 0) + 1;
+          }
+        });
+
+        const sortedInterrogateCandidates = candidatePaths.map((c) => {
+          const detCount = roomToDetCount[c.roomId] || 0;
+          // Priority to rooms with detectives, secondary to distance
+          const score = detCount * 10 - c.distance;
+          return { ...c, score };
+        });
+
+        if (sortedInterrogateCandidates.length > 0) {
+          sortedInterrogateCandidates.sort((a, b) => b.score - a.score);
+          chosenPathInfo = sortedInterrogateCandidates[0];
+          const targetDetCount = roomToDetCount[chosenPathInfo.roomId] || 0;
+          if (targetDetCount > 0) {
+            decisionReasoning = `bluntly marches to the ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to confront and interrogate suspect(s).`;
+          } else {
+            decisionReasoning = `targets the closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} for direct inspection.`;
+          }
+        } else {
+          candidatePaths.sort((a, b) => a.distance - b.distance);
+          chosenPathInfo = candidatePaths[0];
+          decisionReasoning = `targets closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} as fallback.`;
+        }
+      } else if (activeId === "ASHCROFT" && notebook) {
+        // Ashcroft (Cunning Deceiver): 40% chance to target an already ruled-out room as a bluff to confuse opponents.
+        const ruledOutRooms = candidatePaths.filter(
+          (c) => notebook.rooms[c.roomId] !== "POSSIBLE"
+        );
+        const randVal = Math.random();
+        if (randVal < 0.4 && ruledOutRooms.length > 0) {
+          ruledOutRooms.sort((a, b) => a.distance - b.distance);
+          chosenPathInfo = ruledOutRooms[0];
+          decisionReasoning = `deliberately targets the ruled-out ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to mislead rivals.`;
+        } else {
+          const unruledOutCandidates = candidatePaths.filter(
+            (c) => notebook.rooms[c.roomId] === "POSSIBLE"
+          );
+          if (unruledOutCandidates.length > 0) {
+            unruledOutCandidates.sort((a, b) => a.distance - b.distance);
+            chosenPathInfo = unruledOutCandidates[0];
+            decisionReasoning = `cunningly targets ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} to extract key clues.`;
+          } else {
+            candidatePaths.sort((a, b) => a.distance - b.distance);
+            chosenPathInfo = candidatePaths[0];
+            decisionReasoning = `targets closest room ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId} as fallback.`;
+          }
+        }
+      } else {
+        // Rosewood (Aggressive risk-taker) and default fallback
+        // 30% chance to pick the second closest room if available to cover more ground.
+        if (candidatePaths.length > 0) {
+          candidatePaths.sort((a, b) => a.distance - b.distance);
+          if (candidatePaths.length > 1 && Math.random() < 0.3) {
+            chosenPathInfo = candidatePaths[1];
+            decisionReasoning = `audaciously bypasses the closest room to target the ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId}.`;
+          } else {
+            chosenPathInfo = candidatePaths[0];
+            decisionReasoning = `aggressively sprints to the closest room, the ${ROOM_BY_ID[chosenPathInfo.roomId]?.name || chosenPathInfo.roomId}.`;
+          }
+        }
+      }
 
       let path: Position[] | null = null;
-      if (candidatePaths.length > 0) {
-        path = candidatePaths[0].path;
+      if (chosenPathInfo) {
+        path = chosenPathInfo.path;
       }
 
       if (!path || path.length === 0) {
@@ -504,6 +607,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         activeMonologue: mono,
       });
 
+      if (decisionReasoning && humanDetectiveId === null) {
+        get().addLog(activeId, "THINK", `[Strategy] ${detective.name} ${decisionReasoning}`);
+      }
       get().addLog(activeId, "THINK", mono);
 
       get().addLog(
@@ -654,13 +760,74 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         (id) => notebook.weapons[id] === "POSSIBLE"
       );
 
+      let suspectsForSuggestion = [...possibleSuspects];
+      let weaponsForSuggestion = [...possibleWeapons];
+      let suggestionNotes = "";
+
+      const heldSuspects = (Object.keys(notebook.suspects) as DetectiveId[]).filter(
+        (id) => notebook.suspects[id] === "HELD_BY_ME"
+      );
+      const heldWeapons = (Object.keys(notebook.weapons) as WeaponId[]).filter(
+        (id) => notebook.weapons[id] === "HELD_BY_ME"
+      );
+
+      const eliminatedSuspects = (Object.keys(notebook.suspects) as DetectiveId[]).filter(
+        (id) => notebook.suspects[id] === "HELD_BY_OTHER" || notebook.suspects[id] === "ELIMINATED"
+      );
+      const eliminatedWeapons = (Object.keys(notebook.weapons) as WeaponId[]).filter(
+        (id) => notebook.weapons[id] === "HELD_BY_OTHER" || notebook.weapons[id] === "ELIMINATED"
+      );
+
+      if (activeId === "ASHCROFT") {
+        // Ashcroft (Deceiver): 50% chance to bluff by suggesting a card she holds or has eliminated
+        if (Math.random() < 0.5) {
+          const pool = [...heldSuspects, ...eliminatedSuspects];
+          if (pool.length > 0) {
+            const bluffSuspect = pool[Math.floor(Math.random() * pool.length)];
+            suspectsForSuggestion = [bluffSuspect];
+            suggestionNotes = "Bluff Strategy: Deliberately suggesting a ruled-out or held suspect to mislead opponents.";
+          }
+        }
+        if (Math.random() < 0.5) {
+          const pool = [...heldWeapons, ...eliminatedWeapons];
+          if (pool.length > 0) {
+            const bluffWeapon = pool[Math.floor(Math.random() * pool.length)];
+            weaponsForSuggestion = [bluffWeapon];
+            suggestionNotes += (suggestionNotes ? " Also " : "") + "Bluff Strategy: Suggesting a ruled-out or held weapon to hide her real lead.";
+          }
+        }
+      } else if (activeId === "ROSEWOOD") {
+        // Rosewood (Risk-taker): 30% chance to suggest a card she holds in her hand to flush out info
+        if (Math.random() < 0.3 && heldSuspects.length > 0) {
+          suspectsForSuggestion = [heldSuspects[Math.floor(Math.random() * heldSuspects.length)]];
+          suggestionNotes = "Risk Strategy: Testing a suspect in hand to flush out other players' secrets.";
+        }
+        if (Math.random() < 0.3 && heldWeapons.length > 0) {
+          weaponsForSuggestion = [heldWeapons[Math.floor(Math.random() * heldWeapons.length)]];
+          suggestionNotes += (suggestionNotes ? " Also " : "") + "Risk Strategy: Testing a weapon in hand to narrow down possibilities.";
+        }
+      } else if (activeId === "STERLING") {
+        // Sterling (Interrogator): Bluntly summons a nearby active detective to interrogate them
+        const activeRivals = detectives.filter((d) => d.id !== "STERLING" && !d.eliminated);
+        if (activeRivals.length > 0) {
+          activeRivals.sort((a, b) => {
+            const distA = Math.abs(a.position.x - detective.position.x) + Math.abs(a.position.y - detective.position.y);
+            const distB = Math.abs(b.position.x - detective.position.x) + Math.abs(b.position.y - detective.position.y);
+            return distA - distB;
+          });
+          const nearestRival = activeRivals[0].id;
+          suspectsForSuggestion = [nearestRival];
+          suggestionNotes = `Interrogation Strategy: Summons nearby suspect ${activeRivals[0].name} to report immediately for questioning.`;
+        }
+      }
+
       // Query Qwen model to choose a suspect and weapon + monologue in 1 single call
       const inferenceRes = await fetch("/api/inference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agentId: activeId,
-          context: `Possible Suspects: [${possibleSuspects.join(", ")}]\nPossible Weapons: [${possibleWeapons.join(", ")}]\nCurrent Room: ${detective.currentRoom}`,
+          context: `Candidate Suspects: [${suspectsForSuggestion.join(", ")}]\nCandidate Weapons: [${weaponsForSuggestion.join(", ")}]\nCurrent Room: ${detective.currentRoom}${suggestionNotes ? `\nStrategic Directive: ${suggestionNotes}` : ""}`,
           action: "DECIDE_SUGGESTION",
         }),
       });
@@ -671,8 +838,12 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       }
 
       const { suspect, weapon, monologue } = inferenceData.decision;
-      const finalSuspect = possibleSuspects.includes(suspect) ? suspect : (possibleSuspects[0] || "VANCE");
-      const finalWeapon = possibleWeapons.includes(weapon) ? weapon : (possibleWeapons[0] || "PEARL_PISTOL");
+      const finalSuspect = suspectsForSuggestion.includes(suspect) ? suspect : (suspectsForSuggestion[0] || "VANCE");
+      const finalWeapon = weaponsForSuggestion.includes(weapon) ? weapon : (weaponsForSuggestion[0] || "PEARL_PISTOL");
+
+      if (suggestionNotes && humanDetectiveId === null) {
+        get().addLog(activeId, "THINK", `[Strategy] ${detective.name}: ${suggestionNotes}`);
+      }
 
       const suggestion: Suggestion = {
         suspect: finalSuspect,
@@ -820,7 +991,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         updatedNotebooks[activeId] = updateNotebookFromReveal(notebooks[activeId], card);
         updatedConfidence[activeId] = calculateConfidence(updatedNotebooks[activeId]);
 
-        const solution = runDeductionAnalysis(updatedNotebooks[activeId]);
+        const solution = activeId === humanDetectiveId
+          ? runDeductionAnalysis(updatedNotebooks[activeId])
+          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round);
 
         set({
           notebooks: updatedNotebooks,
@@ -873,7 +1046,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         updatedNotebooks[activeId] = updateNotebookFromNoDisproval(notebooks[activeId], suggestion);
         updatedConfidence[activeId] = calculateConfidence(updatedNotebooks[activeId]);
 
-        const solution = runDeductionAnalysis(updatedNotebooks[activeId]);
+        const solution = activeId === humanDetectiveId
+          ? runDeductionAnalysis(updatedNotebooks[activeId])
+          : checkAIAccusationDecision(activeId, updatedNotebooks[activeId], round);
 
         set({
           notebooks: updatedNotebooks,
@@ -1173,7 +1348,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       updatedNotebooks[suggesterId] = updateNotebookFromReveal(notebooks[suggesterId], selectedCard);
       updatedConfidence[suggesterId] = calculateConfidence(updatedNotebooks[suggesterId]);
 
-      const solution = runDeductionAnalysis(updatedNotebooks[suggesterId]);
+      const solution = checkAIAccusationDecision(suggesterId, updatedNotebooks[suggesterId], round);
 
       set({
         notebooks: updatedNotebooks,

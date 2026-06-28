@@ -139,6 +139,52 @@ export function calculateConfidence(notebook: DeductionNotebook): number {
   return Math.min(1, eliminated / (total - 3)); // 3 = the hidden envelope cards
 }
 
+/**
+ * Evaluates whether an AI detective should make an accusation.
+ * Logical, cautious, and statistical detectives require 100% confidence.
+ * Madam Rosewood (Aggressive Risk-taker) is willing to make a guess if she has narrowed
+ * it down to 2 possible combinations (50% probability) starting from Round 3.
+ */
+export function checkAIAccusationDecision(
+  agentId: DetectiveId,
+  notebook: DeductionNotebook,
+  round: number
+): { suspect: DetectiveId; weapon: WeaponId; room: RoomId } | null {
+  const inPlaySuspects = DETECTIVES.filter((d) => notebook.suspects[d.id] === "POSSIBLE");
+  const inPlayWeapons  = WEAPONS.filter((w)  => notebook.weapons[w.id]  === "POSSIBLE");
+  const inPlayRooms    = ROOMS.filter((r)    => notebook.rooms[r.id]    === "POSSIBLE");
+
+  // Standard case: solved (exactly 1 candidate in each category)
+  if (
+    inPlaySuspects.length === 1 &&
+    inPlayWeapons.length  === 1 &&
+    inPlayRooms.length    === 1
+  ) {
+    return {
+      suspect: inPlaySuspects[0].id,
+      weapon:  inPlayWeapons[0].id,
+      room:    inPlayRooms[0].id,
+    };
+  }
+
+  // Madam Rosewood: Aggressive risk-taker (Round 3+ and exactly 2 combinations left)
+  if (agentId === "ROSEWOOD" && round >= 3) {
+    const totalCombos = inPlaySuspects.length * inPlayWeapons.length * inPlayRooms.length;
+    if (totalCombos === 2 && inPlaySuspects.length > 0 && inPlayWeapons.length > 0 && inPlayRooms.length > 0) {
+      const chosenSuspect = inPlaySuspects[Math.floor(Math.random() * inPlaySuspects.length)].id;
+      const chosenWeapon = inPlayWeapons[Math.floor(Math.random() * inPlayWeapons.length)].id;
+      const chosenRoom = inPlayRooms[Math.floor(Math.random() * inPlayRooms.length)].id;
+      return {
+        suspect: chosenSuspect,
+        weapon: chosenWeapon,
+        room: chosenRoom,
+      };
+    }
+  }
+
+  return null;
+}
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -150,3 +196,4 @@ function cloneNotebook(nb: DeductionNotebook): DeductionNotebook {
     rooms:    { ...nb.rooms    },
   };
 }
+

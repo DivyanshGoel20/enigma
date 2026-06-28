@@ -30,8 +30,23 @@ export async function POST(request: Request) {
     let userPrompt = "";
 
     if (action === "DECIDE_SUGGESTION") {
-      systemPrompt = `You are ${personality?.name || agentId}, a detective agent at Ashford Manor. You must select one suspect and one weapon from the provided lists of candidates that you have not ruled out yet. You must also write a short thought monologue (under 20 words, in character, no quotes) about your choice or suspicion. You must return your choice strictly in raw JSON format: { "suspect": "SUSPECT_ID", "weapon": "WEAPON_ID", "monologue": "Your brief thought monologue here" }. Output only valid JSON. Do not include any explanation or markdown formatting outside the JSON.`;
-      userPrompt = `Candidates context:\n${context}\n\nPlease select exactly one suspect and one weapon from the candidates, write a brief monologue, and return them in JSON format: { "suspect": "...", "weapon": "...", "monologue": "..." }`;
+      let personalityGuide = "";
+      if (agentId === "VANCE") {
+        personalityGuide = "You are Inspector Vance. You are cautious, methodical, and patient. You make logical, careful suggestions to systematically rule out options. Speak in a measured, analytical tone.";
+      } else if (agentId === "ROSEWOOD") {
+        personalityGuide = "You are Madam Rosewood. You are bold, aggressive, and theatrical. You make risky, aggressive suggestions to force answers quickly. Speak with high energy and dramatic flare.";
+      } else if (agentId === "BLACKWOOD") {
+        personalityGuide = "You are Dr. Blackwood. You are cold, probabilistic, and mathematical. You treat the crime as a statistical puzzle. Speak with clinical precision using probabilistic or logical terms.";
+      } else if (agentId === "STERLING") {
+        personalityGuide = "You are Captain Sterling. You are a blunt, direct, and tough military investigator. You demand compliance and summon suspects for direct confrontation. Speak in command tone.";
+      } else if (agentId === "ASHCROFT") {
+        personalityGuide = "You are Lady Ashcroft. You are a cunning, charming, and devious deceiver. You love to bluff and mislead rivals. Speak with elegant charm and subtle misdirection.";
+      } else {
+        personalityGuide = `You are ${personality?.name || agentId}, a detective.`;
+      }
+
+      systemPrompt = `${personalityGuide} You must select one suspect and one weapon from the provided lists of candidates. You must also write a short thought monologue (under 20 words, in character, no quotes) explaining your choice or suspicion. You must return your choice strictly in raw JSON format: { "suspect": "SUSPECT_ID", "weapon": "WEAPON_ID", "monologue": "Your brief thought monologue here" }. Output only valid JSON. Do not include any explanation or markdown formatting outside the JSON.`;
+      userPrompt = `Candidates and strategic context:\n${context}\n\nPlease select exactly one suspect and one weapon from the candidates, write a brief monologue, and return them in JSON format: { "suspect": "...", "weapon": "...", "monologue": "..." }`;
     } else {
       systemPrompt = personality?.systemPrompt || "You are a detective solving a murder mystery at Ashford Manor. Keep replies under 25 words.";
       userPrompt = `\nContext about your current state inside Ashford Manor:\n${context}\n\nYou are currently executing the action: ${action}.\nProduce a short phrase or response in your distinct detective persona describing what you are doing, planning, or thinking. Keep it under 25 words. Do NOT wrap in quotes.\n`;

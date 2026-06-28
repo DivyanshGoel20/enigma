@@ -9,32 +9,19 @@ import { DiceDisplay } from "./components/ui/DiceDisplay";
 import { ActivityFeed } from "./components/spectator/ActivityFeed";
 import { SuspicionMeter } from "./components/spectator/SuspicionMeter";
 import { DetectiveCard } from "./components/spectator/DetectiveCard";
-import { DETECTIVES, DETECTIVE_BY_ID, WEAPONS, ROOMS } from "@/lib/game/constants";
+import { DETECTIVES, DETECTIVE_BY_ID, WEAPON_BY_ID, WEAPONS, ROOMS } from "@/lib/game/constants";
 import type { DetectiveId, WeaponId, RoomId, Position, Card } from "@/lib/game/types";
-import { runDeductionAnalysis } from "@/lib/game/deduction";
+import { runDeductionAnalysis, checkAIAccusationDecision } from "@/lib/game/deduction";
 import { getReachableCells } from "@/lib/game/board";
 import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Activity, Users, HelpCircle, AlertTriangle } from "lucide-react";
 
 const getCardDetails = (id: string) => {
   const cleanId = id.toUpperCase();
-  if (
-    cleanId.includes("VANCE") ||
-    cleanId.includes("ROSEWOOD") ||
-    cleanId.includes("BLACKWOOD") ||
-    cleanId.includes("STERLING") ||
-    cleanId.includes("ASHCROFT")
-  ) {
+  if (DETECTIVE_BY_ID[cleanId]) {
     return { type: "SUSPECT", icon: "👤", color: "text-[#a78bfa] border-[#a78bfa]/20" };
   }
-  if (
-    cleanId.includes("PISTOL") ||
-    cleanId.includes("OPENER") ||
-    cleanId.includes("STRYCHNINE") ||
-    cleanId.includes("CLOCK") ||
-    cleanId.includes("TIE") ||
-    cleanId.includes("CANE")
-  ) {
+  if (WEAPON_BY_ID[cleanId]) {
     return { type: "WEAPON", icon: "🗡️", color: "text-[#f59e0b] border-[#f59e0b]/20" };
   }
   return { type: "ROOM", icon: "🚪", color: "text-[#06b6d4] border-[#06b6d4]/20" };
@@ -54,6 +41,7 @@ export default function Home() {
     confidence,
     log,
     winner,
+    round,
     envelope,
     initGame,
     rollDiceAction,
@@ -134,6 +122,13 @@ export default function Home() {
       }
     }
   }, [status, humanDetectiveId, detectives]);
+
+  // Fallback active panel if human playing and on suspicion
+  useEffect(() => {
+    if (humanDetectiveId && activePanel === "suspicion") {
+      setActivePanel("feed");
+    }
+  }, [humanDetectiveId, activePanel, setActivePanel]);
 
   // Reset helper
   const handleBeginGame = () => {
@@ -229,7 +224,9 @@ export default function Home() {
         const activeId = detectiveOrder[currentDetectiveIndex];
         const notebook = notebooks[activeId];
         if (notebook) {
-          const solution = runDeductionAnalysis(notebook);
+          const solution = activeId === humanDetectiveId
+            ? runDeductionAnalysis(notebook)
+            : checkAIAccusationDecision(activeId, notebook, round);
           if (solution) {
             makeAccusation(solution);
           } else {
@@ -859,11 +856,13 @@ export default function Home() {
           <div className="glass-panel shadow-xl flex flex-col h-[700px] xl:h-[780px] overflow-hidden">
             {/* Panel Tabs Header */}
             <div className="flex border-b border-white/5 bg-black/10 rounded-t-2xl">
-              {(["feed", "detectives"] as const).map((tab) => {
+              {(humanDetectiveId === null ? (["feed", "suspicion", "detectives"] as const) : (["feed", "detectives"] as const)).map((tab) => {
                 const getTabDetails = (t: typeof tab) => {
                   switch (t) {
                     case "feed":
                       return { label: "Events", icon: Activity };
+                    case "suspicion":
+                      return { label: "Suspicion", icon: HelpCircle };
                     case "detectives":
                       return { label: "Dossiers", icon: Users };
                   }
@@ -891,6 +890,15 @@ export default function Home() {
             {/* Panel body container */}
             <div className="flex-1 overflow-hidden">
               {activePanel === "feed" && <ActivityFeed log={log} />}
+              {activePanel === "suspicion" && (
+                <SuspicionMeter
+                  confidence={confidence}
+                  activeDetectiveId={activeDetectiveId}
+                  eliminatedIds={detectives.filter((d) => d.eliminated).map((d) => d.id)}
+                  detectives={detectives}
+                  notebooks={notebooks}
+                />
+              )}
               {activePanel === "detectives" && (
                 <div className="overflow-y-auto h-full p-4 space-y-4">
                   {detectives.map((det) => (
@@ -935,7 +943,7 @@ export default function Home() {
                         <motion.div
                           key={card.id}
                           whileHover={{ y: -4, scale: 1.05 }}
-                          className="w-20 h-32 rounded-xl border relative flex flex-col justify-between p-2 shadow-xl bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0"
+                          className="w-24 h-36 rounded-xl border relative flex flex-col justify-between p-2.5 shadow-xl bg-gradient-to-b from-slate-900 to-black overflow-hidden shrink-0"
                           style={{ borderColor: details.icon === "👤" ? "rgba(167,139,250,0.3)" : details.icon === "🗡️" ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)" }}
                         >
                           {/* Card background artwork overlay */}
@@ -955,7 +963,7 @@ export default function Home() {
                           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/25 pointer-events-none z-10" />
 
                           {/* Top banner / icon */}
-                          <div className={`flex items-center justify-between text-[8px] font-mono font-bold uppercase tracking-wider z-20 ${
+                          <div className={`flex items-center justify-between text-[9px] font-mono font-bold uppercase tracking-wider z-20 ${
                             details.type === "SUSPECT" ? "text-[#a78bfa]" : details.type === "WEAPON" ? "text-[#f59e0b]" : "text-[#06b6d4]"
                           }`}>
                             <span>{details.type}</span>
@@ -963,12 +971,12 @@ export default function Home() {
                           </div>
                           
                           {/* Middle card artwork placeholder slot */}
-                          <div className="flex-1 flex items-center justify-center text-2xl my-0.5 opacity-20 z-20">
+                          <div className="flex-1 flex items-center justify-center text-3xl my-0.5 opacity-20 z-20">
                             {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
                           </div>
                           
                           {/* Card name */}
-                          <div className="text-[8px] sm:text-[8.5px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
+                          <div className="text-[10px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
                             {card.name.replace(/_/g, " ")}
                           </div>
                         </motion.div>
