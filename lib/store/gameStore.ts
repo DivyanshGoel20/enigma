@@ -37,6 +37,7 @@ import {
 } from "@/lib/game/deduction";
 import { findPath, getReachableDoors, walkPath, getRoomAt, walkFullSteps } from "@/lib/game/board";
 import { getAddressFromPrivateKey } from "@/lib/zeroG/chain";
+import { soundManager } from "@/lib/game/sound";
 
 // ============================================================
 // STORE SHAPE
@@ -396,8 +397,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Dice ─────────────────────────────────────────────────
   rollDiceAction: async () => {
-    const { actionState, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId, notebooks, customDetective } = get();
-    if (actionState !== "idle") return;
+    const { actionState, isSyncing, currentDetectiveIndex, detectives, detectiveOrder, gameId, round, turn, humanDetectiveId, notebooks, customDetective } = get();
+    if (actionState !== "idle" || isSyncing) return;
 
     set({
       isSyncing: true,
@@ -406,6 +407,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
     });
 
     try {
+      soundManager.playDiceRoll();
       const roll = rollDice();
       const activeId = detectiveOrder[currentDetectiveIndex];
       const detective = detectives.find((d) => d.id === activeId)!;
@@ -671,7 +673,13 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       // Movement complete — land on the final cell
       const finalPos = movementPath[movementPath.length - 1];
       const activeId = detectiveOrder[currentDetectiveIndex];
-      const roomId = getRoomAt(finalPos.x, finalPos.y);
+      const detective = detectives.find((d) => d.id === activeId)!;
+      const startingRoomId = detective.currentRoom;
+
+      let roomId = getRoomAt(finalPos.x, finalPos.y);
+      if (roomId === startingRoomId) {
+        roomId = null;
+      }
 
       const updatedDetectives = detectives.map((d) =>
         d.id === activeId
@@ -688,12 +696,14 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       });
 
       if (roomId) {
+        soundManager.playRoomEntry();
         get().addLog(activeId, "ENTER_ROOM", `Entered the ${roomId.replace(/_/g, " ")}.`);
       }
       return;
     }
 
     // Advance one step
+    soundManager.playMoveTick();
     const pos = movementPath[nextStep];
     const activeId = detectiveOrder[currentDetectiveIndex];
 
@@ -767,7 +777,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── AI Suggestion ───────────────────────────────────────────
   makeSuggestion: async () => {
-    const { currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId, customDetective } = get();
+    const { actionState, isSyncing, currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId, customDetective } = get();
+    if (actionState !== "suggesting" || isSyncing) return;
+
     const activeId = detectiveOrder[currentDetectiveIndex];
     const detective = detectives.find((d) => d.id === activeId)!;
     const notebook = notebooks[activeId];
@@ -853,6 +865,11 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         }
       }
 
+      const detectivesNames = detectives.reduce((acc, d) => {
+        acc[d.id] = d.name;
+        return acc;
+      }, {} as Record<string, string>);
+
       // Query Qwen model to choose a suspect and weapon + monologue in 1 single call
       const inferenceRes = await fetch("/api/inference", {
         method: "POST",
@@ -862,6 +879,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           context: `Candidate Suspects: [${suspectsForSuggestion.join(", ")}]\nCandidate Weapons: [${weaponsForSuggestion.join(", ")}]\nCurrent Room: ${detective.currentRoom}${suggestionNotes ? `\nStrategic Directive: ${suggestionNotes}` : ""}`,
           action: "DECIDE_SUGGESTION",
           customSystemPrompt: isCustom ? customDetective.personalityPrompt : undefined,
+          detectivesNames,
         }),
       });
 
@@ -943,6 +961,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         suggestStorageData.rootHash,
         suggestStorageData.txSeq
       );
+
+      soundManager.playSuggestion();
 
       get().addLog(
         finalSuspect,
@@ -1118,9 +1138,9 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Human Action: Make suggestion ────────────────────────
   makeHumanSuggestion: async (suggestion: Suggestion) => {
-    const { currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId } = get();
+    const { actionState, isSyncing, currentDetectiveIndex, detectiveOrder, detectives, hands, notebooks, confidence, gameId, round, turn, humanDetectiveId } = get();
     const activeId = detectiveOrder[currentDetectiveIndex];
-    if (activeId !== humanDetectiveId || activeId === null) return;
+    if (activeId !== humanDetectiveId || activeId === null || actionState !== "suggesting" || isSyncing) return;
 
     set({
       isSyncing: true,
@@ -1180,6 +1200,8 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
         suggestStorageData.rootHash,
         suggestStorageData.txSeq
       );
+
+      soundManager.playSuggestion();
 
       get().addLog(
         suggestion.suspect,
@@ -1418,10 +1440,10 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── Accusation ───────────────────────────────────────────
   makeAccusation: async (accusation: Suggestion) => {
-    const { envelope, currentDetectiveIndex, detectiveOrder, detectives, gameId, round, turn } = get();
+    const { actionState, isSyncing, envelope, currentDetectiveIndex, detectiveOrder, detectives, gameId, round, turn } = get();
     const activeId = detectiveOrder[currentDetectiveIndex];
 
-    if (!envelope) return;
+    if (!envelope || actionState !== "accusing" || isSyncing) return;
 
     set({
       isSyncing: true,
@@ -1459,9 +1481,11 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
       );
 
       if (correct) {
+        soundManager.playWin();
         get().addLog("SYSTEM", "GAME_OVER", `${activeId} solved the mystery! Case closed.`);
         set({ status: "finished", winner: activeId, actionState: "idle" });
       } else {
+        soundManager.playLoss();
         get().addLog(
           activeId,
           "ELIMINATED",
@@ -1543,9 +1567,15 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
 
   // ── AI Thought Monologues (0G Compute) ───────────────────
   fetchAIMonologue: async (agentId, context, action) => {
-    const { customDetective } = get();
+    const { customDetective, detectives } = get();
     const isCustom = customDetective !== null && customDetective.targetAgentId === agentId;
     set({ isThinking: true, activeMonologue: null });
+
+    const detectivesNames = detectives.reduce((acc, d) => {
+      acc[d.id] = d.name;
+      return acc;
+    }, {} as Record<string, string>);
+
     try {
       const res = await fetch("/api/inference", {
         method: "POST",
@@ -1555,6 +1585,7 @@ export const useGameStore = create<GameState & GameActions>((set, get) => ({
           context,
           action,
           customSystemPrompt: isCustom ? customDetective.personalityPrompt : undefined,
+          detectivesNames,
         }),
       });
       const data = await res.json();

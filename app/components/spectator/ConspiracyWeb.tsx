@@ -416,7 +416,11 @@ export function ConspiracyWeb({ detective, notebook }: ConspiracyWebProps) {
                 (pos.type === "weapon" && solvedState.weapon === id) ||
                 (pos.type === "room" && solvedState.room === id);
 
-              const nameText = DETECTIVE_BY_ID[id]?.name || pos.label;
+              const activeDet = detectives.find((d) => d.id === id);
+              const nameText = activeDet ? activeDet.name : (DETECTIVE_BY_ID[id]?.name || pos.label);
+              const pinLabel = activeDet
+                ? activeDet.name.split(" ").slice(-1)[0]
+                : pos.label;
 
               return (
                 <g
@@ -533,7 +537,7 @@ export function ConspiracyWeb({ detective, notebook }: ConspiracyWebProps) {
                     textDecoration={isEliminated ? "line-through" : undefined}
                     className="font-mono text-[8px] tracking-wide"
                   >
-                    {pos.label}
+                    {pinLabel}
                   </text>
                 </g>
               );

@@ -9,12 +9,14 @@ import { DiceDisplay } from "./components/ui/DiceDisplay";
 import { ActivityFeed } from "./components/spectator/ActivityFeed";
 import { SuspicionMeter } from "./components/spectator/SuspicionMeter";
 import { DetectiveCard } from "./components/spectator/DetectiveCard";
+import { ConspiracyWeb } from "./components/spectator/ConspiracyWeb";
 import { DETECTIVES, DETECTIVE_BY_ID, WEAPON_BY_ID, WEAPONS, ROOMS } from "@/lib/game/constants";
 import type { DetectiveId, WeaponId, RoomId, Position, Card, CustomDetectiveConfig } from "@/lib/game/types";
 import { runDeductionAnalysis, checkAIAccusationDecision } from "@/lib/game/deduction";
 import { getReachableCells } from "@/lib/game/board";
 import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Activity, Users, HelpCircle, AlertTriangle } from "lucide-react";
+import { soundManager } from "@/lib/game/sound";
 
 const getCardDetails = (id: string) => {
   const cleanId = id.toUpperCase();
@@ -158,6 +160,9 @@ export default function Home() {
     localStorage.setItem("enigma_manual_notebook", JSON.stringify(manualNotebook));
   }, [manualNotebook]);
 
+  // Tab selector for single player desk: checklist or conspiracy web
+  const [deskTab, setDeskTab] = useState<"checklist" | "conspiracy">("checklist");
+
   // Pre-fill manual notebook with user's starting hand when game starts
   useEffect(() => {
     if (status === "playing" && humanDetectiveId) {
@@ -180,6 +185,39 @@ export default function Home() {
       setActivePanel("feed");
     }
   }, [humanDetectiveId, activePanel, setActivePanel]);
+
+  // Initialize soundManager on first user interaction
+  useEffect(() => {
+    const handleInteraction = () => {
+      soundManager.init();
+      // Remove listeners once initialized
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+
+    window.addEventListener("click", handleInteraction);
+    window.addEventListener("keydown", handleInteraction);
+    window.addEventListener("touchstart", handleInteraction);
+
+    return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, []);
+
+  // Manage ambient soundtrack loop
+  useEffect(() => {
+    if (status === "playing") {
+      soundManager.init();
+      if (!soundManager.getIsMutedMusic()) {
+        soundManager.startMusic();
+      }
+    } else if (status === "finished") {
+      soundManager.stopMusic();
+    }
+  }, [status]);
 
   // Reset helper
   const handleBeginGame = () => {
@@ -263,6 +301,17 @@ export default function Home() {
   // Helper for current active detective
   const activeDetectiveId = detectiveOrder[currentDetectiveIndex];
   const activeDetective = detectives.find((d) => d.id === activeDetectiveId);
+
+  const getDetName = (id: DetectiveId) => {
+    if (status === "playing" || status === "finished") {
+      const found = detectives.find((d) => d.id === id);
+      if (found) return found.name;
+    }
+    if (customDetective && customDetective.targetAgentId === id) {
+      return customDetective.customName;
+    }
+    return DETECTIVE_BY_ID[id]?.name || id;
+  };
 
   const isHumanTurn = activeDetectiveId === humanDetectiveId;
   const isHumanMoving = isHumanTurn && actionState === "moving" && movementPath.length === 0;
@@ -373,7 +422,7 @@ export default function Home() {
   const getStatusMessage = () => {
     if (status === "finished") {
       return winner
-        ? `${DETECTIVE_BY_ID[winner]?.name} solved the murder!`
+        ? `${getDetName(winner)} solved the murder!`
         : "All detectives eliminated. Enigma remains a mystery.";
     }
     if (!activeDetective) return "Initializing board...";
@@ -640,7 +689,7 @@ export default function Home() {
                               style={{ backgroundColor: det.color }}
                             />
                             <span className="text-[11px] font-bold text-white tracking-wide truncate">
-                              {det.name}
+                              {getDetName(det.id)}
                             </span>
                           </div>
                         </div>
@@ -661,10 +710,10 @@ export default function Home() {
                       onClick={handleBeginGame}
                       className="px-8 py-4 rounded-xl font-bold font-mono text-xs tracking-widest uppercase bg-gradient-to-r from-[#b89255] to-[#8a6a30] text-[#0f0a05] border border-[#d4aa6a]/40 shadow-xl shadow-black/50 hover:shadow-[#b89255]/25 transition-all cursor-pointer active:scale-95"
                     >
-                      Play as {selectedRole !== "spectator" ? DETECTIVE_BY_ID[selectedRole]?.name : ""}
+                      Play as {selectedRole !== "spectator" ? getDetName(selectedRole) : ""}
                     </motion.button>
                     <p className="text-[10px] text-[#64748b] font-mono mt-3">
-                      *You will control {selectedRole !== "spectator" ? DETECTIVE_BY_ID[selectedRole]?.name : ""}, make moves, suggest clues, and disprove cards yourself.
+                      *You will control {selectedRole !== "spectator" ? getDetName(selectedRole) : ""}, make moves, suggest clues, and disprove cards yourself.
                     </p>
                   </div>
                 </div>
@@ -929,8 +978,8 @@ export default function Home() {
                       <span>🔍 Disprove Suggestion</span>
                     </div>
                     <p className="text-xs text-[#cbd5e1] leading-relaxed">
-                      <strong>{DETECTIVE_BY_ID[disprovalPending.suggesterId]?.name}</strong> suggested that the murder was committed by{" "}
-                      <strong>{DETECTIVE_BY_ID[disprovalPending.suggestion.suspect]?.name}</strong> with the{" "}
+                      <strong>{getDetName(disprovalPending.suggesterId)}</strong> suggested that the murder was committed by{" "}
+                      <strong>{getDetName(disprovalPending.suggestion.suspect)}</strong> with the{" "}
                       <strong>{disprovalPending.suggestion.weapon.replace(/_/g, " ")}</strong> in the{" "}
                       <strong>{disprovalPending.suggestion.room.replace(/_/g, " ")}</strong>.
                       <br />
@@ -973,7 +1022,7 @@ export default function Home() {
                               {details.icon === "👤" ? "🕵️" : details.icon === "🗡️" ? "⚔️" : "🏛️"}
                             </div>
                             <div className="text-[8.5px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
-                              {card.name.replace(/_/g, " ")}
+                              {details.type === "SUSPECT" ? getDetName(card.id as DetectiveId) : card.name.replace(/_/g, " ")}
                             </div>
                           </button>
                         );
@@ -1054,7 +1103,7 @@ export default function Home() {
                             >
                               {DETECTIVES.map((d) => (
                                 <option key={d.id} value={d.id}>
-                                  {d.name}
+                                  {getDetName(d.id)}
                                 </option>
                               ))}
                             </select>
@@ -1230,7 +1279,7 @@ export default function Home() {
                           
                           {/* Card name */}
                           <div className="text-[10px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
-                            {card.name.replace(/_/g, " ")}
+                            {details.type === "SUSPECT" ? getDetName(card.id as DetectiveId) : card.name.replace(/_/g, " ")}
                           </div>
                         </motion.div>
                       );
@@ -1239,106 +1288,67 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Right Side: Manual Deduction Checklist */}
+              {/* Right Side: Manual Deduction Checklist / Conspiracy Web */}
               <div className="flex-1 space-y-4">
-                <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                  <h3 className="text-sm font-mono font-bold text-[#b89255] uppercase tracking-wider flex items-center gap-2">
-                    <span>📝</span> Your Case Notebook Checklist
-                  </h3>
-                  <div className="flex items-center gap-4 text-[9px] font-mono text-[#cbd5e1]/70">
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-800/50 border border-white/10" /> Possible Clue</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-950/20 border border-red-500/20" /> Crossed-out (Eliminated)</span>
-                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-950/20 border border-amber-500/20" /> Under Review</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/5 pb-2 gap-2">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-mono font-bold text-[#b89255] uppercase tracking-wider flex items-center gap-2">
+                      <span>📝</span> Your Case Notebook
+                    </h3>
+                    <div className="flex rounded-lg bg-slate-950 p-0.5 border border-white/5">
+                      <button
+                        onClick={() => setDeskTab("checklist")}
+                        className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                          deskTab === "checklist"
+                            ? "bg-[#b89255]/20 text-[#b89255]"
+                            : "text-[#cbd5e1]/60 hover:text-white"
+                        }`}
+                      >
+                        Checklist
+                      </button>
+                      <button
+                        onClick={() => setDeskTab("conspiracy")}
+                        className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                          deskTab === "conspiracy"
+                            ? "bg-[#b89255]/20 text-[#b89255]"
+                            : "text-[#cbd5e1]/60 hover:text-white"
+                        }`}
+                      >
+                        Conspiracy Web
+                      </button>
+                    </div>
                   </div>
+                  {deskTab === "checklist" ? (
+                    <div className="flex items-center gap-4 text-[9px] font-mono text-[#cbd5e1]/70">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-800/50 border border-white/10" /> Possible Clue</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-950/20 border border-red-500/20" /> Crossed-out (Eliminated)</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-950/20 border border-amber-500/20" /> Under Review</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-4 text-[9px] font-mono text-[#cbd5e1]/70">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-[#ef4444] inline-block" /> Suspicion</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-[#10b981] inline-block" /> My Hand</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-[#3b82f6] inline-block" /> Rival</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-[#d97706] inline-block" /> Solution</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono text-xs">
-                  {/* Suspects Column */}
-                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
-                    <div className="font-bold text-[#a78bfa] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
-                      <span>Suspects</span>
-                      <span className="text-[8px] text-gray-500">5 Cards</span>
-                    </div>
-                    
-                    {DETECTIVES.map((d) => {
-                      const status = manualNotebook[d.id] || "POSSIBLE";
-                      return (
-                        <div
-                          key={d.id}
-                          onClick={() => toggleManualCard(d.id)}
-                          className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
-                            status === "ELIMINATED"
-                              ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
-                              : status === "REVIEW"
-                              ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
-                              : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
-                          }`}
-                        >
-                          <span className="truncate max-w-[120px]">{d.name}</span>
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
-                            status === "ELIMINATED"
-                              ? "bg-red-500/10 border-red-500/20 text-red-400"
-                              : status === "REVIEW"
-                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                              : "bg-slate-500/5 border-slate-500/20 text-slate-400"
-                          }`}>
-                            {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Weapons Column */}
-                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
-                    <div className="font-bold text-[#f59e0b] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
-                      <span>Weapons</span>
-                      <span className="text-[8px] text-gray-500">6 Cards</span>
-                    </div>
-                    
-                    {WEAPONS.map((w) => {
-                      const status = manualNotebook[w.id] || "POSSIBLE";
-                      return (
-                        <div
-                          key={w.id}
-                          onClick={() => toggleManualCard(w.id)}
-                          className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
-                            status === "ELIMINATED"
-                              ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
-                              : status === "REVIEW"
-                              ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
-                              : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
-                          }`}
-                        >
-                          <span className="truncate max-w-[120px]">{w.name}</span>
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
-                            status === "ELIMINATED"
-                              ? "bg-red-500/10 border-red-500/20 text-red-400"
-                              : status === "REVIEW"
-                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                              : "bg-slate-500/5 border-slate-500/20 text-slate-400"
-                          }`}>
-                            {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Rooms Column */}
-                  <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
-                    <div className="font-bold text-[#06b6d4] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
-                      <span>Rooms</span>
-                      <span className="text-[8px] text-gray-500">9 Rooms</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 gap-2 max-h-[260px] overflow-y-auto pr-1 scrollbar-thin">
-                      {ROOMS.map((r) => {
-                        const status = manualNotebook[r.id] || "POSSIBLE";
+                {deskTab === "checklist" ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono text-xs">
+                    {/* Suspects Column */}
+                    <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                      <div className="font-bold text-[#a78bfa] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                        <span>Suspects</span>
+                        <span className="text-[8px] text-gray-500">5 Cards</span>
+                      </div>
+                      
+                      {DETECTIVES.map((d) => {
+                        const status = manualNotebook[d.id] || "POSSIBLE";
                         return (
                           <div
-                            key={r.id}
-                            onClick={() => toggleManualCard(r.id)}
+                            key={d.id}
+                            onClick={() => toggleManualCard(d.id)}
                             className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
                               status === "ELIMINATED"
                                 ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
@@ -1347,7 +1357,7 @@ export default function Home() {
                                 : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
                             }`}
                           >
-                            <span className="truncate max-w-[120px]">{r.name.replace(/_/g, " ")}</span>
+                            <span className="truncate max-w-[120px]">{getDetName(d.id)}</span>
                             <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
                               status === "ELIMINATED"
                                 ? "bg-red-500/10 border-red-500/20 text-red-400"
@@ -1361,8 +1371,95 @@ export default function Home() {
                         );
                       })}
                     </div>
+
+                    {/* Weapons Column */}
+                    <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                      <div className="font-bold text-[#f59e0b] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                        <span>Weapons</span>
+                        <span className="text-[8px] text-gray-500">6 Cards</span>
+                      </div>
+                      
+                      {WEAPONS.map((w) => {
+                        const status = manualNotebook[w.id] || "POSSIBLE";
+                        return (
+                          <div
+                            key={w.id}
+                            onClick={() => toggleManualCard(w.id)}
+                            className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                              status === "ELIMINATED"
+                                ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
+                                : status === "REVIEW"
+                                ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
+                                : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
+                            }`}
+                          >
+                            <span className="truncate max-w-[120px]">{w.name}</span>
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
+                              status === "ELIMINATED"
+                                ? "bg-red-500/10 border-red-500/20 text-red-400"
+                                : status === "REVIEW"
+                                ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                : "bg-slate-500/5 border-slate-500/20 text-slate-400"
+                            }`}>
+                              {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Rooms Column */}
+                    <div className="space-y-2 bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                      <div className="font-bold text-[#06b6d4] border-b border-white/5 pb-1.5 mb-2 uppercase text-[10px] tracking-wider flex justify-between items-center">
+                        <span>Rooms</span>
+                        <span className="text-[8px] text-gray-500">9 Rooms</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 gap-2 max-h-[260px] overflow-y-auto pr-1 scrollbar-thin">
+                        {ROOMS.map((r) => {
+                          const status = manualNotebook[r.id] || "POSSIBLE";
+                          return (
+                            <div
+                              key={r.id}
+                              onClick={() => toggleManualCard(r.id)}
+                              className={`flex items-center justify-between p-2 rounded-lg border transition-all duration-200 cursor-pointer ${
+                                status === "ELIMINATED"
+                                  ? "bg-red-950/5 border-red-900/10 opacity-40 text-gray-500 line-through"
+                                  : status === "REVIEW"
+                                  ? "bg-amber-950/10 border-amber-500/30 text-amber-300 font-semibold"
+                                  : "bg-white/[0.01] border-white/5 hover:border-white/10 text-gray-200 font-semibold"
+                              }`}
+                            >
+                              <span className="truncate max-w-[120px]">{r.name.replace(/_/g, " ")}</span>
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-bold border shrink-0 uppercase ${
+                                status === "ELIMINATED"
+                                  ? "bg-red-500/10 border-red-500/20 text-red-400"
+                                  : status === "REVIEW"
+                                  ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                                  : "bg-slate-500/5 border-slate-500/20 text-slate-400"
+                              }`}>
+                                {status === "ELIMINATED" ? "❌ Out" : status === "REVIEW" ? "⏳ Check" : "❓ Lead"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-black/25 p-3 rounded-2xl border border-white/[0.03]">
+                    {(() => {
+                      const humanDet = detectives.find((d) => d.id === humanDetectiveId);
+                      if (!humanDet) return null;
+                      return (
+                        <ConspiracyWeb
+                          detective={humanDet}
+                          notebook={notebooks[humanDetectiveId]}
+                        />
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1399,7 +1496,7 @@ export default function Home() {
                   <div className="grid grid-cols-3 gap-2.5 text-center text-xs font-mono font-bold">
                     <div className="bg-[#080b14] border border-red-900/30 p-2.5 rounded text-[#f43f5e]">
                       <span className="block text-[8px] text-[#475569] font-medium uppercase mb-1">Suspect</span>
-                      {DETECTIVE_BY_ID[envelope.suspect]?.name || envelope.suspect}
+                      {getDetName(envelope.suspect)}
                     </div>
                     <div className="bg-[#080b14] border border-cyan-900/30 p-2.5 rounded text-[#06b6d4]">
                       <span className="block text-[8px] text-[#475569] font-medium uppercase mb-1">Weapon</span>
@@ -1427,7 +1524,7 @@ export default function Home() {
                   <div>
                     <div className="text-[10px] text-[#475569] uppercase font-bold">Winner</div>
                     <h4 className="text-sm font-bold text-[#10b981]">
-                      {DETECTIVE_BY_ID[winner]?.name}
+                      {getDetName(winner)}
                     </h4>
                     <p className="text-[10px] text-[#94a3b8] mt-0.5 leading-snug">
                       Solved the case with 100% confidence.
@@ -1499,7 +1596,7 @@ export default function Home() {
                   >
                     {DETECTIVES.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.name}
+                        {getDetName(d.id)}
                       </option>
                     ))}
                   </select>

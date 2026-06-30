@@ -80,6 +80,8 @@ export function GameBoard({
               SECRET_STUDY: "/room_secret_study.png",
             };
 
+            const isLibrary = room.id === "LIBRARY";
+
             return (
               <div
                 key={`bg-${room.id}`}
@@ -90,7 +92,7 @@ export function GameBoard({
                   width: `${width}%`,
                   height: `${height}%`,
                   backgroundImage: `url(${imageMap[room.id] || "/room_card_bg.png"})`,
-                  backgroundSize: "cover",
+                  backgroundSize: isLibrary ? "143% 100%" : "cover",
                   backgroundPosition: "center",
                   boxShadow: "inset 0 0 30px rgba(0,0,0,0.85)",
                 }}

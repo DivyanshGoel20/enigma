@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { DetectiveState, DeductionNotebook, DetectiveId, WeaponId, RoomId } from "@/lib/game/types";
 import { DETECTIVE_BY_ID, WEAPON_BY_ID } from "@/lib/game/constants";
 import { ConspiracyWeb } from "./ConspiracyWeb";
+import { useGameStore } from "@/lib/store/gameStore";
 
 const getCardDetails = (id: string) => {
   const cleanId = id.toUpperCase();
@@ -88,6 +89,13 @@ export function DetectiveCard({
   humanDetectiveId = null,
 }: DetectiveCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { detectives } = useGameStore();
+
+  const getDetName = (id: string) => {
+    const found = detectives.find((d) => d.id === id);
+    return found ? found.name : (DETECTIVE_BY_ID[id as DetectiveId]?.name || id);
+  };
+
   const meta = DETECTIVE_BY_ID[detective.id];
 
   const showCaseFileButton = humanDetectiveId === null;
@@ -271,7 +279,7 @@ export function DetectiveCard({
                       
                       {/* Card name */}
                       <div className="text-[10px] font-serif font-black uppercase text-center leading-tight tracking-wider text-white border-t border-white/10 pt-1.5 z-20 w-full px-0.5 break-words">
-                        {card.name.replace(/_/g, " ")}
+                        {details.type === "SUSPECT" ? getDetName(card.id) : card.name.replace(/_/g, " ")}
                       </div>
                     </motion.div>
                   );

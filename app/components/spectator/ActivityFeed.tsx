@@ -1,9 +1,10 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import type { LogEntry } from "@/lib/game/types";
+import type { LogEntry, DetectiveId } from "@/lib/game/types";
 import { DETECTIVE_BY_ID } from "@/lib/game/constants";
 import { useEffect, useRef } from "react";
+import { useGameStore } from "@/lib/store/gameStore";
 
 const ACTION_STYLES: Record<string, { label: string; color: string }> = {
   GAME_START:     { label: "START",    color: "#10b981" },
@@ -27,10 +28,21 @@ interface ActivityFeedProps {
 
 export function ActivityFeed({ log }: ActivityFeedProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { detectives } = useGameStore();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log.length]);
+
+  const getDetName = (id: string) => {
+    const found = detectives.find((d) => d.id === id);
+    return found ? found.name : (DETECTIVE_BY_ID[id as DetectiveId]?.name || id);
+  };
+
+  const getDetColor = (id: string) => {
+    const found = detectives.find((d) => d.id === id);
+    return found ? found.color : (DETECTIVE_BY_ID[id as DetectiveId]?.color || "#64748b");
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -45,7 +57,31 @@ export function ActivityFeed({ log }: ActivityFeedProps) {
         <AnimatePresence initial={false}>
           {log.map((entry) => {
             const style = ACTION_STYLES[entry.action] ?? { label: entry.action, color: "#64748b" };
-            const det = entry.agentId !== "SYSTEM" ? DETECTIVE_BY_ID[entry.agentId] : null;
+            const hasAgent = entry.agentId !== "SYSTEM";
+            const name = hasAgent ? getDetName(entry.agentId) : "";
+            const color = hasAgent ? getDetColor(entry.agentId) : "";
+
+            // Replace any trace of original detective name or ID in the details logs
+            let displayDetails = entry.details;
+            detectives.forEach((d) => {
+              const originalName = DETECTIVE_BY_ID[d.id]?.name;
+              if (originalName) {
+                // 1. Always replace raw ID with the active name (e.g. ROSEWOOD -> Madam Rosewood, or BLACKWOOD -> Cray Frog)
+                displayDetails = displayDetails.replace(new RegExp(d.id, "g"), d.name);
+
+                // 2. Only perform name substitutions if the name is customized
+                if (d.name !== originalName) {
+                  // Replace full name case-insensitively
+                  displayDetails = displayDetails.replace(new RegExp(originalName, "gi"), d.name);
+
+                  // Also replace the last name only (e.g. "Blackwood" -> "Funky Fish")
+                  const lastName = originalName.split(" ").slice(-1)[0];
+                  if (lastName && lastName.length > 2) {
+                    displayDetails = displayDetails.replace(new RegExp(lastName, "gi"), d.name);
+                  }
+                }
+              }
+            });
 
             return (
               <motion.div
@@ -68,18 +104,18 @@ export function ActivityFeed({ log }: ActivityFeedProps) {
                 </span>
 
                 <div className="flex-1 min-w-0">
-                  {det && (
+                  {hasAgent && (
                     <div className="flex items-center gap-1 mb-0.5">
                       <span
                         className="h-1.5 w-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: det.color }}
+                        style={{ backgroundColor: color }}
                       />
                       <span className="text-[10px] font-semibold text-[#f1f5f9] truncate">
-                        {det.name}
+                        {name}
                       </span>
                     </div>
                   )}
-                  <p className="text-[10px] text-[#94a3b8] leading-snug">{entry.details}</p>
+                  <p className="text-[10px] text-[#94a3b8] leading-snug">{displayDetails}</p>
                   
                   {/* Explorer links */}
                   {(entry.txHash || entry.rootHash || entry.txSeq !== undefined) && (
